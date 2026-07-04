@@ -71,6 +71,8 @@
         .btn-back:hover { background-color: #95a5a6; }
         .btn-online { background-color: #9b59b6; color: white; }
         .btn-online:hover { background-color: #8e44ad; }
+        .btn-cancel { background-color: #e74c3c; color: white; font-size: 14px; }
+        .btn-cancel:hover { background-color: #c0392b; }
 
         #gameOverOverlay {
             display: none;
@@ -152,6 +154,10 @@ const socket = io();
 const GRAVITY = 0.6;
 const GROUND_Y = 350;
 
+// ĐỊNH NGHĨA KÍCH THƯỚC MAP GẤP ĐÔI (1600px)
+const MAP_WIDTH = 1600; 
+const VIEW_WIDTH = canvas.width; // 800px
+
 let gameMode = null; 
 let botDifficulty = 'medium'; 
 let isGameOver = false;
@@ -163,6 +169,9 @@ let amIPlayer1 = true;
 
 let fireworks = [];
 let shakeTimer = 0;
+
+// Biến lưu vị trí Camera X
+let cameraX = 0;
 
 const keys = {
     a: false, d: false, w: false, click: false,
@@ -188,7 +197,7 @@ class Stickman {
         this.hp = 100;
         this.isAttacking = false;
         this.attackCooldown = 0;
-        this.facing = (x < canvas.width / 2) ? 1 : -1;
+        this.facing = (x < MAP_WIDTH / 2) ? 1 : -1;
         
         this.animTimer = 0; 
         this.aiDecisionTimer = 0;
@@ -227,8 +236,7 @@ class Stickman {
         if (this.attackCooldown > 0) this.attackCooldown--;
 
         if (gameMode === 'online') {
-            // Khi chơi online, việc di chuyển nhân vật của mình dựa vào phím nhấn
-            // Nhân vật của đối thủ sẽ cập nhật hoàn toàn thông qua mạng mạng từ server gửi về
+            // Logic online di chuyển được đồng bộ trong GameLoop
         } else if (this.isAI) {
             this.handleAI(opponent);
         } else {
@@ -236,8 +244,10 @@ class Stickman {
         }
 
         this.x += this.vx;
+        
+        // GIỚI HẠN DI CHUYỂN THEO MAP MỚI (1600px)
         if (this.x < 0) this.x = 0;
-        if (this.x + this.width > canvas.width) this.x = canvas.width - this.width;
+        if (this.x + this.width > MAP_WIDTH) this.x = MAP_WIDTH - this.width;
     }
 
     handlePlayer() {
@@ -308,15 +318,17 @@ class Stickman {
     }
 
     draw() {
+        let drawX = this.x - cameraX;
+
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 4;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
 
         let lean = this.isAttacking ? 8 * this.facing : 0;
-        let headX = this.x + this.width / 2 + lean;
+        let headX = drawX + this.width / 2 + lean;
         let headY = this.y + 15;
-        let spineBottomX = this.x + this.width / 2;
+        let spineBottomX = drawX + this.width / 2;
         let spineBottomY = this.y + 50;
 
         ctx.beginPath();
@@ -387,8 +399,8 @@ class Stickman {
     }
 }
 
-const p1 = new Stickman(150, 200, "#3498db", { left: 'a', right: 'd', up: 'w', attack: 'click' });
-const p2 = new Stickman(600, 200, "#e74c3c", { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', attack: 'l' });
+const p1 = new Stickman(200, 200, "#3498db", { left: 'a', right: 'd', up: 'w', attack: 'click' });
+const p2 = new Stickman(1400, 200, "#e74c3c", { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', attack: 'l' });
 
 class Particle {
     constructor(x, y, color) {
@@ -413,7 +425,7 @@ class Particle {
         ctx.save();
         ctx.globalAlpha = this.alpha;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.arc(this.x - cameraX, this.y, this.radius, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
         ctx.fill();
         ctx.restore();
@@ -423,7 +435,7 @@ class Particle {
 function spawnFirework() {
     let colors = ['#f1c40f', '#e74c3c', '#2ecc71', '#9b59b6', '#3498db', '#e67e22', '#00ffff'];
     let randomColor = colors[Math.floor(Math.random() * colors.length)];
-    let targetX = Math.random() * canvas.width;
+    let targetX = Math.random() * VIEW_WIDTH + cameraX;
     let targetY = Math.random() * (canvas.height - 150) + 50;
     for(let i = 0; i < 40; i++) {
         fireworks.push(new Particle(targetX, targetY, randomColor));
@@ -443,12 +455,10 @@ function checkHit(attacker, defender) {
 
 function drawUI() {
     ctx.font = "14px Arial";
-    // Thanh máu P1
     ctx.fillStyle = "#555"; ctx.fillRect(20, 20, 200, 20);
     ctx.fillStyle = "#3498db"; ctx.fillRect(20, 20, Math.max(0, p1.hp * 2), 20);
     ctx.fillStyle = "#fff"; ctx.fillText(gameMode === 'online' ? (amIPlayer1 ? "BẠN (XANH): " : "ĐỐI THỦ (XANH): ") + Math.round(p1.hp) : "P1 HP: " + Math.round(p1.hp), 25, 34);
 
-    // Thanh máu P2
     ctx.fillStyle = "#555"; ctx.fillRect(canvas.width - 220, 20, 200, 20);
     ctx.fillStyle = "#e74c3c"; ctx.fillRect(canvas.width - 220, 20, Math.max(0, p2.hp * 2), 20);
     ctx.fillStyle = "#fff";
@@ -474,15 +484,36 @@ function gameLoop() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(canvas.width, GROUND_Y); ctx.stroke();
+    // [1] GHIM CAMERA VÀO NHÂN VẬT CỦA BẠN TRÊN TOÀN MAP
+    let targetX = p1.x; 
+    if (gameMode === 'online') {
+        targetX = amIPlayer1 ? p1.x : p2.x;
+    }
+    cameraX = targetX - VIEW_WIDTH / 2;
+    
+    if (cameraX < 0) cameraX = 0;
+    if (cameraX > MAP_WIDTH - VIEW_WIDTH) cameraX = MAP_WIDTH - VIEW_WIDTH;
 
-    // XỬ LÝ LỆNH DI CHUYỂN RIÊNG CHO CHẾ ĐỘ ONLINE
+    // VẼ SÀN ĐẤU
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+    ctx.beginPath(); 
+    ctx.moveTo(0 - cameraX, GROUND_Y); 
+    ctx.lineTo(MAP_WIDTH - cameraX, GROUND_Y); 
+    ctx.stroke();
+
+    ctx.strokeStyle = "#444";
+    for(let i = 100; i < MAP_WIDTH; i += 100) {
+        ctx.beginPath();
+        ctx.moveTo(i - cameraX, GROUND_Y);
+        ctx.lineTo(i - cameraX, GROUND_Y + 10);
+        ctx.stroke();
+    }
+
+    // XỬ LÝ DI CHUYỂN
     if (gameMode === 'online') {
         let myCharacter = amIPlayer1 ? p1 : p2;
         myCharacter.vx = 0;
         
-        // Điều khiển phím chung 'A' và 'D' cho nhân vật của bản thân khi online
         if (keys['a']) { myCharacter.vx = -myCharacter.speed; myCharacter.facing = -1; }
         if (keys['d']) { myCharacter.vx = myCharacter.speed; myCharacter.facing = 1; }
         if (keys['w'] && myCharacter.isGrounded) {
@@ -496,7 +527,7 @@ function gameLoop() {
         p1.update(p2);
         p2.update(p1);
 
-        // Phát tín hiệu đồng bộ tọa độ của mình lên server liên tục
+        // Gửi dữ liệu trạng thái của bản thân lên server liên tục
         socket.emit('playerAction', {
             roomId: onlineRoomId,
             x: myCharacter.x,
@@ -507,28 +538,50 @@ function gameLoop() {
             hp: myCharacter.hp
         });
     } else {
-        // Chế độ Offline cũ (vs Bot hoặc PvP local)
         p1.update(p2);
         p2.update(p1);
     }
 
-    // Kiểm tra va chạm đòn đánh cục bộ
-    if (checkHit(p1, p2)) {
-        p2.hp -= 5; 
-        p2.x += 15 * p1.facing; 
-        p1.isAttacking = false; 
-    }
-    if (checkHit(p2, p1)) {
-        p1.hp -= 5; 
-        p1.x += 15 * p2.facing; 
-        p2.isAttacking = false;
+    // =================================================================
+    // [2] ĐỒNG BỘ VA CHẠM TRỪ MÁU: CHUẨN HOÁ ONLINE (ĐÃ ĐƯỢC SỬA LỖI)
+    // =================================================================
+    if (gameMode === 'online') {
+        if (amIPlayer1) {
+            // Bạn là P1 (Xanh): Chỉ kiểm tra xem P2 (Đỏ) có đấm trúng BẠN không.
+            // Nếu trúng, BẠN tự trừ máu của BẠN và tự đẩy lùi BẠN.
+            if (checkHit(p2, p1)) {
+                p1.hp -= 5;
+                p1.x += 15 * p2.facing;
+                p2.isAttacking = false;
+            }
+        } else {
+            // Bạn là P2 (Đỏ): Chỉ kiểm tra xem P1 (Xanh) có đấm trúng BẠN không.
+            // Nếu trúng, BẠN tự trừ máu của BẠN và tự đẩy lùi BẠN.
+            if (checkHit(p1, p2)) {
+                p2.hp -= 5;
+                p2.x += 15 * p1.facing;
+                p1.isAttacking = false;
+            }
+        }
+    } else {
+        // Nếu chơi Offline (Đấu Bot / PvP 1 máy) -> Giữ nguyên tính toán va chạm 2 chiều cục bộ
+        if (checkHit(p1, p2)) {
+            p2.hp -= 5; 
+            p2.x += 15 * p1.facing; 
+            p1.isAttacking = false; 
+        }
+        if (checkHit(p2, p1)) {
+            p1.hp -= 5; 
+            p1.x += 15 * p2.facing; 
+            p2.isAttacking = false;
+        }
     }
 
     p1.draw();
     p2.draw();
     drawUI();
 
-    // Trọng tài check kết thúc trận đấu
+    // Check kết thúc trận đấu
     if (p1.hp <= 0 || p2.hp <= 0) {
         isGameOver = true;
         let msg = "";
@@ -595,39 +648,38 @@ function gameOverLoop() {
     requestAnimationFrame(gameOverLoop);
 }
 
-// KHỞI ĐỘNG CHẾ ĐỘ ONLINE VÀ TÌM PHÒNG ĐẤU
 function startOnlineMatchmaking() {
-    document.getElementById("mainMenu").innerHTML = "<h2>ĐANG TÌM ĐỐI THỦ...</h2><p>Vui lòng đợi người chơi khác tham gia phòng.</p>";
+    document.getElementById("mainMenu").innerHTML = `
+        <h2>ĐANG TÌM ĐỐI THỦ...</h2>
+        <p>Vui lòng đợi người chơi khác tham gia phòng.</p>
+        <button class="btn-cancel" onclick="cancelOnlineMatchmaking()">❌ HỦY TÌM TRẬN</button>
+    `;
     gameMode = 'online';
     socket.emit('findMatch');
 }
 
-// LẮNG NGHE CÁC SỰ KIỆN TỪ SERVER GỬI VỀ
-socket.on('waitingForPlayer', () => {
-    // Đứng chờ trong hàng chờ matchmaking
-});
+function cancelOnlineMatchmaking() {
+    socket.emit('cancelFindMatch'); 
+    resetToMenu();
+}
+
+socket.on('waitingForPlayer', () => {});
 
 socket.on('matchFound', (data) => {
     onlineRoomId = data.roomId;
-    // Kiểm tra mình là người kết nối trước hay sau để phân vai Player 1 hay Player 2
     amIPlayer1 = (data.players[0] === socket.id);
 
-    // Ẩn bảng menu chính đi để mở giao diện sàn đấu
     document.getElementById("menu").style.display = "none";
-    document.getElementById("restartBtn").style.display = "none"; // Chế độ online đấu 1 lần, muốn chơi lại phải ra menu tìm trận mới
+    document.getElementById("restartBtn").style.display = "none"; 
     
-    p1.reset(150, 200, 1);
-    p2.reset(600, 200, -1);
+    p1.reset(200, 200, 1);
+    p2.reset(1400, 200, -1);
     isGameOver = false;
 
-    // Cập nhật lại khung thông báo kỹ năng
     document.getElementById("p2ControlText").innerHTML = `<h3 style="color: #e74c3c;">Đối Thủ Online</h3><p>Trạng thái: Đã kết nối mạng</p>`;
-    
-    // Khởi chạy game loop
     gameLoop();
 });
 
-// Cập nhật vị trí của đối phương liên tục qua mạng
 socket.on('opponentAction', (data) => {
     let opponent = amIPlayer1 ? p2 : p1;
     opponent.x = data.x;
@@ -635,10 +687,9 @@ socket.on('opponentAction', (data) => {
     opponent.vx = data.vx;
     opponent.facing = data.facing;
     opponent.isAttacking = data.isAttacking;
-    opponent.hp = data.hp;
+    opponent.hp = data.hp; // Cập nhật lượng máu chuẩn xác từ máy của đối thủ gửi sang
 });
 
-// Nếu đối phương đột ngột thoát game/mất mạng giữa chừng
 socket.on('opponentLeft', () => {
     if(!isGameOver) {
         isGameOver = true;
@@ -666,24 +717,25 @@ function startGame(mode, difficulty = 'medium') {
     winner = null;
     fireworks = [];
     shakeTimer = 0;
+    cameraX = 0;
     canvas.style.transform = 'translate(0px, 0px)';
 
     document.getElementById("menu").style.display = "none";
     document.getElementById("gameOverOverlay").style.display = "none";
     document.getElementById("restartBtn").style.display = "inline-block";
 
-    p1.reset(150, 200, 1);
+    p1.reset(200, 200, 1);
     
     if (mode === 'ai') {
         p2.isAI = true;
-        p2.reset(600, 200, -1);
+        p2.reset(1400, 200, -1);
         let diffText = "Trung bình";
         if(difficulty === 'easy') diffText = "Dễ";
         if(difficulty === 'hard') diffText = "Khó";
         document.getElementById("p2ControlText").innerHTML = `<h3 style="color: #e74c3c;">Máy (Bot Tự Động)</h3><p>Độ khó: ${diffText}</p>`;
     } else {
         p2.isAI = false;
-        p2.reset(600, 200, -1);
+        p2.reset(1400, 200, -1);
         document.getElementById("p2ControlText").innerHTML = `<h3 style="color: #e74c3c;">Player 2 (Đỏ)</h3><p>Di chuyển: ⬅ ➡ | Nhảy: ⬆ | Đấm: L</p>`;
     }
 
@@ -692,22 +744,21 @@ function startGame(mode, difficulty = 'medium') {
 
 function restartGame() {
     if(gameMode === 'online') return;
-    isGameOver = false; winner = null; fireworks = []; shakeTimer = 0;
+    isGameOver = false; winner = null; fireworks = []; shakeTimer = 0; cameraX = 0;
     canvas.style.transform = 'translate(0px, 0px)';
     document.getElementById("gameOverOverlay").style.display = "none";
-    p1.reset(150, 200, 1); p2.reset(600, 200, -1);
+    p1.reset(200, 200, 1); p2.reset(1400, 200, -1);
     gameLoop();
 }
 
 function resetToMenu() {
-    // Phục hồi lại nút nguyên bản của menu khi thoát ra ngoài
     document.getElementById("mainMenu").innerHTML = `
         <h2>CHỌN CHẾ ĐỘ CHƠI</h2>
         <button onclick="showDifficultyMenu()">ĐẤU VỚI MÁY (BOT)</button>
         <button onclick="startGame('pvp')">2 NGƯỜI CHƠI (PVP OFFLINE)</button>
         <button class="btn-online" onclick="startOnlineMatchmaking()">🌍 CHƠI ONLINE (TÌM TRẬN)</button>
     `;
-    gameMode = null; isGameOver = false; winner = null; fireworks = []; shakeTimer = 0;
+    gameMode = null; isGameOver = false; winner = null; fireworks = []; shakeTimer = 0; cameraX = 0;
     canvas.style.transform = 'translate(0px, 0px)';
     document.getElementById("gameOverOverlay").style.display = "none";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -715,7 +766,6 @@ function resetToMenu() {
     document.getElementById("menu").style.display = "block";
 }
 
-// Lắng nghe bàn phím
 window.addEventListener("keydown", (e) => {
     let key = e.key.toLowerCase();
     if (key in keys) keys[key] = true;
@@ -728,7 +778,6 @@ window.addEventListener("keyup", (e) => {
     if (e.key in keys) keys[e.key] = false;
 });
 
-// Lắng nghe chuột
 window.addEventListener("mousedown", (e) => {
     if (e.button === 0 && gameMode !== null && !isGameOver) {
         keys['click'] = true;
