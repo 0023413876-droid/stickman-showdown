@@ -1,111 +1,151 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
+
+// Cấu hình CORS để chạy trên các môi trường Cloud (Render,...)
 const io = new Server(server, {
     cors: {
-        origin: "*", // Đảm bảo không bị chặn CORS khi chạy trên các cloud nền tảng như Render
+        origin: "*", 
         methods: ["GET", "POST"]
     }
 });
 
-// Cấu hình cổng linh hoạt cho Localhost và Cloud (Render, Heroku,...)
-const PORT = process.env.PORT || 3000;
+// Phục vụ file tĩnh trong thư mục public
+app.use(express.static('public'));
 
-// Cấu hình thư mục chứa file game tĩnh (HTML, CSS, JS công khai)
-app.use(express.static(path.join(__dirname, 'public')));
-
-let rooms = {}; // Lưu trữ danh sách phòng đấu chủ động
+// Các hàng đợi cho chế độ 2, 3, 4, 5 người
+const matchQueues = {
+    2: [],
+    3: [],
+    4: [],
+    5: []
+};
 
 io.on('connection', (socket) => {
-    console.log(`🔌 Người chơi kết nối thành công: ${socket.id}`);
+    console.log(`🦇 Người chơi kết nối thành công: ${socket.id}`);
 
-    // 1. Xử lý khi người chơi ấn nút "Tìm Trận"
-    socket.on('findMatch', () => {
-        let joinedRoom = null;
-
-        // Tìm phòng xem có phòng nào đang có đúng 1 người đang đợi không
-        for (let roomId in rooms) {
-            if (rooms[roomId] && rooms[roomId].length === 1) {
-                joinedRoom = roomId;
-                break;
-            }
-        }
-
-        if (joinedRoom) {
-            // Vào phòng đã có sẵn người chờ
-            rooms[joinedRoom].push(socket.id);
-            socket.join(joinedRoom);
-            
-            // Thông báo trận đấu bắt đầu cho cả 2 người cùng phòng
-            io.to(joinedRoom).emit('matchFound', {
-                roomId: joinedRoom,
-                players: rooms[joinedRoom]
+    const updateQueueStatus = (maxPlayers) => {
+        const queue = matchQueues[maxPlayers];
+        queue.forEach(playerSocket => {
+            playerSocket.emit('roomUpdate', {
+                currentPlayers: queue.length,
+                maxPlayers: maxPlayers
             });
-            console.log(`🎮 Trận đấu CHÍNH THỨC BẮT ĐẦU tại phòng: ${joinedRoom} [${rooms[joinedRoom].join(' VS ')}]`);
-        } else {
-            // Tạo một mã phòng ngẫu nhiên duy nhất và đứng đợi
-            const newRoomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-            rooms[newRoomId] = [socket.id];
-            socket.join(newRoomId);
-            socket.emit('waitingForPlayer');
-            console.log(`⏳ Người chơi ${socket.id} đang xếp hàng tại phòng chờ: ${newRoomId}`);
-        }
-    });
+        });
+    };
 
-    // 2. Xử lý khi người chơi chủ động bấm nút "Hủy Tìm Trận"
-    socket.on('cancelFindMatch', () => {
-        for (let roomId in rooms) {
-            // Chỉ cho phép hủy phòng nếu chính người đó đang ở trong phòng chờ ĐƠN ĐỘC (length === 1)
-            if (rooms[roomId] && rooms[roomId].includes(socket.id) && rooms[roomId].length === 1) {
-                console.log(`❌ Người chơi ${socket.id} đã hủy tìm trận. Hệ thống xóa phòng chờ trống: ${roomId}`);
-                socket.leave(roomId);
-                delete rooms[roomId]; // Giải phóng bộ nhớ RAM cho server
-                break;
+    const removeFromQueue = (socket) => {
+        if (socket.waitingMode) {
+            const mode = socket.waitingMode;
+            const index = matchQueues[mode].indexOf(socket);
+            if (index !== -1) {
+                matchQueues[mode].splice(index, 1);
+                updateQueueStatus(mode);
+                console.log(`❌ Người chơi ${socket.id} đã hủy tìm trận. Rời hàng đợi chế độ ${mode} người.`);
+            }
+            socket.waitingMode = null;
+        }
+    };
+
+    // TÌM TRẬN
+    socket.on('findMatch', (data) => {
+        const maxPlayers = (data && data.maxPlayers) ? data.maxPlayers : 5; 
+        
+        removeFromQueue(socket);
+
+        if (matchQueues[maxPlayers]) {
+            matchQueues[maxPlayers].push(socket);
+            socket.waitingMode = maxPlayers; 
+            
+            console.log(`⏳ Người chơi ${socket.id} đang xếp hàng tại phòng chờ (Chế độ ${maxPlayers} người) - (${matchQueues[maxPlayers].length}/${maxPlayers})`);
+            
+            updateQueueStatus(maxPlayers);
+
+            // Gom đủ người thì tạo phòng
+            if (matchQueues[maxPlayers].length === maxPlayers) {
+                const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5); 
+                
+                const playersInRoom = matchQueues[maxPlayers].splice(0, maxPlayers);
+                const playerIds = playersInRoom.map(p => p.id);
+
+                playersInRoom.forEach(p => {
+                    p.join(roomId);
+                    p.currentRoom = roomId;
+                    p.waitingMode = null;
+                });
+
+                io.to(roomId).emit('matchFound', {
+                    roomId: roomId,
+                    players: playerIds
+                });
+                
+                console.log(`🎮 Trận đấu bắt đầu tại phòng: ${roomId} (Gồm ${maxPlayers} người)`);
             }
         }
     });
 
-    // 3. Đồng bộ hành động di chuyển/đấm nhau giữa 2 bên
-    socket.on('playerAction', (data) => {
-        // Kiểm tra tính hợp lệ của dữ liệu đầu vào để tránh crash server
-        if (data && data.roomId && rooms[data.roomId]) {
-            // Phát sóng (Broadcast) hành động sang cho đối thủ trong cùng phòng nhận diện
-            socket.to(data.roomId).emit('opponentAction', data);
+    // HỦY TÌM TRẬN
+    socket.on('cancelFindMatch', () => {
+        removeFromQueue(socket);
+    });
+
+    // CHỦ ĐỘNG THOÁT TRẬN (TỪ NÚT 3 VẠCH)
+    socket.on('leaveMatch', () => {
+        if (socket.currentRoom) {
+            console.log(`running Người chơi ${socket.id} đã chủ động thoát khỏi trận!`);
+            socket.to(socket.currentRoom).emit('opponentLeft', { id: socket.id });
+            socket.leave(socket.currentRoom);
+            socket.currentRoom = null; 
         }
     });
 
-    // 4. Xử lý an toàn khi người chơi ngắt kết nối đột ngột (Mất mạng, F5, Tắt tab)
+    // TÍNH NĂNG MÁU THỜI GIAN THỰC KHI ĐÁNH TRÚNG
+    socket.on('playerHit', (data) => {
+        if (data.roomId && data.targetId) {
+            // Gửi thông báo cho toàn bộ phòng biết ai vừa bị đấm trúng và bị đánh bởi hướng nào để lùi lại
+            io.to(data.roomId).emit('onPlayerHit', {
+                targetId: data.targetId,
+                attackerId: socket.id,
+                facing: data.facing // Hướng quay mặt của người đấm để xử lý đẩy lùi (Knockback)
+            });
+        }
+    });
+
+    // ĐỒNG BỘ THAO TÁC TRONG GAME
+    socket.on('playerAction', (data) => {
+        if (data.roomId) {
+            socket.to(data.roomId).emit('opponentAction', {
+                id: socket.id,
+                x: data.x,
+                y: data.y,
+                vx: data.vx,
+                vy: data.vy,
+                isGrounded: data.isGrounded,
+                facing: data.facing,
+                isAttacking: data.isAttacking,
+                hp: data.hp
+            });
+        }
+    });
+
+    // MẤT KẾT NỐI (TẮT TRÌNH DUYỆT)
     socket.on('disconnect', () => {
         console.log(`❌ Người chơi ngắt kết nối: ${socket.id}`);
-        
-        for (let roomId in rooms) {
-            if (rooms[roomId] && rooms[roomId].includes(socket.id)) {
-                // Gửi thông báo tới đối thủ cùng phòng trước khi dọn dẹp dữ liệu
-                socket.to(roomId).emit('opponentLeft');
-                
-                // Loại bỏ người chơi đã thoát ra khỏi mảng của phòng đó
-                rooms[roomId] = rooms[roomId].filter(id => id !== socket.id);
-                
-                // Nếu phòng không còn ai, hoặc chỉ còn 1 người sau khi trận đấu đã chạy -> Hủy hoàn toàn phòng
-                if (rooms[roomId].length === 0 || rooms[roomId].length === 1) {
-                    console.log(`🧹 Hệ thống tự động giải phóng và đóng phòng đấu: ${roomId}`);
-                    delete rooms[roomId];
-                }
-                break;
-            }
+        removeFromQueue(socket);
+        if (socket.currentRoom) {
+            socket.to(socket.currentRoom).emit('opponentLeft', { id: socket.id });
         }
     });
 });
 
-// Khởi chạy Server lắng nghe kết nối
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`=================================================`);
-    console.log(`📡 SERVER GAME STICKMAN ĐANG CHẠY ỔN ĐỊNH!`);
+    console.log(`==================================================`);
+    console.log(`🚀 SERVER GAME STICKMAN ĐANG CHẠY ỔN ĐỊNH!`);
     console.log(`🌐 Chạy cục bộ (Localhost): http://localhost:${PORT}`);
     console.log(`💰 Chạy trên môi trường Cloud (Render): Port ${PORT}`);
-    console.log(`=================================================`);
+    console.log(`==================================================`);
 });
