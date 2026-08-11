@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -12,11 +13,15 @@
             box-sizing: border-box;
             user-select: none;
         }
-        input, button, select {
+
+        input,
+        button,
+        select {
             user-select: text !important;
             -webkit-user-select: text !important;
             touch-action: manipulation !important;
         }
+
         body {
             margin: 0;
             background-color: #222;
@@ -31,11 +36,13 @@
             overflow: hidden;
             touch-action: none;
         }
+
         h1 {
             font-size: 24px;
             margin: 10px 0;
             text-align: center;
         }
+
         .game-wrapper {
             position: relative;
             width: 100%;
@@ -44,6 +51,7 @@
             flex-direction: column;
             align-items: center;
         }
+
         canvas {
             background-color: #111;
             border: 4px solid #fff;
@@ -53,9 +61,13 @@
             height: auto;
             box-sizing: border-box;
         }
+
         #nameScreen {
             position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
             display: flex;
             flex-direction: column;
@@ -63,26 +75,37 @@
             justify-content: center;
             z-index: 999;
         }
+
         #nameScreen .ns-card {
-            background: rgba(255,255,255,0.07);
-            border: 2px solid rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.07);
+            border: 2px solid rgba(255, 255, 255, 0.2);
             border-radius: 18px;
             padding: 40px 36px;
             width: 90%;
             max-width: 420px;
-            box-shadow: 0 8px 40px rgba(0,0,0,0.6), 0 0 60px rgba(52,152,219,0.15);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6), 0 0 60px rgba(52, 152, 219, 0.15);
             backdrop-filter: blur(12px);
             text-align: center;
         }
+
         #nameScreen .ns-logo {
             font-size: 48px;
             margin-bottom: 6px;
             animation: float 3s ease-in-out infinite;
         }
+
         @keyframes float {
-            0%,100% { transform: translateY(0); }
-            50% { transform: translateY(-8px); }
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-8px);
+            }
         }
+
         #nameScreen h2 {
             color: #fff;
             font-size: 22px;
@@ -90,15 +113,18 @@
             letter-spacing: 2px;
             text-transform: uppercase;
         }
+
         #nameScreen p.ns-sub {
-            color: rgba(255,255,255,0.5);
+            color: rgba(255, 255, 255, 0.5);
             font-size: 13px;
             margin: 0 0 28px 0;
         }
+
         .ns-field {
             position: relative;
             margin-bottom: 20px;
         }
+
         .ns-field label {
             display: block;
             font-size: 12px;
@@ -109,12 +135,13 @@
             margin-bottom: 8px;
             text-transform: uppercase;
         }
+
         .ns-field input {
             width: 100%;
             padding: 14px 18px;
             border-radius: 10px;
-            border: 2px solid rgba(52,152,219,0.6);
-            background: rgba(0,0,0,0.35);
+            border: 2px solid rgba(52, 152, 219, 0.6);
+            background: rgba(0, 0, 0, 0.35);
             color: #fff;
             font-size: 20px;
             font-weight: bold;
@@ -124,10 +151,12 @@
             letter-spacing: 2px;
             transition: border-color 0.25s, box-shadow 0.25s;
         }
+
         .ns-field input:focus {
             border-color: #f1c40f;
-            box-shadow: 0 0 18px rgba(241,196,15,0.4);
+            box-shadow: 0 0 18px rgba(241, 196, 15, 0.4);
         }
+
         #btnEnterGame {
             width: 100%;
             padding: 15px;
@@ -141,12 +170,14 @@
             cursor: pointer;
             margin-top: 4px;
             transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 20px rgba(52,152,219,0.4);
+            box-shadow: 0 4px 20px rgba(52, 152, 219, 0.4);
         }
+
         #btnEnterGame:hover {
             transform: translateY(-2px) scale(1.03);
-            box-shadow: 0 8px 30px rgba(52,152,219,0.6);
+            box-shadow: 0 8px 30px rgba(52, 152, 219, 0.6);
         }
+
         /* === MENU CHÍNH === */
         #menu {
             position: absolute;
@@ -163,6 +194,7 @@
             max-width: 400px;
             box-sizing: border-box;
         }
+
         #mainMenu,
         #difficultyMenu,
         #onlineMenu,
@@ -170,11 +202,13 @@
             display: flex;
             flex-direction: column;
         }
+
         #difficultyMenu,
         #onlineMenu,
         #matchmakingMenu {
             display: none;
         }
+
         button {
             background-color: #fff;
             color: #111;
@@ -189,59 +223,73 @@
             width: 90%;
             align-self: center;
         }
+
         button:hover {
             transform: scale(1.05);
         }
+
         .btn-easy {
             background-color: #2ecc71;
             color: white;
         }
+
         .btn-medium {
             background-color: #f1c40f;
             color: #111;
         }
+
         .btn-hard {
             background-color: #e74c3c;
             color: white;
         }
+
         .btn-back {
             background-color: #7f8c8d;
             color: white;
             font-size: 14px;
         }
+
         .btn-online {
             background-color: #9b59b6;
             color: white;
         }
+
         .btn-cancel {
             background-color: #e74c3c;
             color: white;
             font-size: 14px;
         }
+
         .btn-restart {
             background-color: #2ecc71;
             color: white;
         }
+
         .btn-menu {
             background-color: #e67e22;
             color: white;
         }
+
         .btn-p2 {
             background-color: #3498db;
             color: white;
         }
+
         .btn-p3 {
             background-color: #2ecc71;
             color: white;
         }
+
         .btn-p4 {
             background-color: #f1c40f;
             color: #111;
         }
+
         .btn-p5 {
             background-color: #e74c3c;
             color: white;
         }
+
         /* === NHẬP TÊN NGƯỜI CHƠI === */
         .name-input-container {
             margin: 10px 0;
@@ -255,12 +303,14 @@
             border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.2);
         }
+
         .name-input-container label {
             font-size: 13px;
             font-weight: bold;
             color: #ffd700;
             text-align: left;
         }
+
         .name-input-container input {
             padding: 8px 12px;
             border-radius: 5px;
@@ -272,10 +322,12 @@
             outline: none;
             text-align: center;
         }
+
         .name-input-container input:focus {
             border-color: #f1c40f;
             box-shadow: 0 0 8px rgba(241, 196, 15, 0.5);
         }
+
         /* === GAME OVER === */
         #gameOverOverlay {
             display: none;
@@ -291,6 +343,7 @@
             z-index: 5;
             backdrop-filter: blur(4px);
         }
+
         #winnerText {
             font-size: 26px;
             font-weight: bold;
@@ -300,12 +353,14 @@
             padding: 0 16px;
             line-height: 1.4;
         }
+
         #subWinnerText {
             font-size: 14px;
-            color: rgba(255,255,255,0.65);
+            color: rgba(255, 255, 255, 0.65);
             margin-bottom: 22px;
             text-align: center;
         }
+
         #rematchStatus {
             font-size: 14px;
             color: #f1c40f;
@@ -313,6 +368,7 @@
             text-align: center;
             min-height: 20px;
         }
+
         #rematchBtn {
             background: linear-gradient(135deg, #2ecc71, #27ae60);
             color: #fff;
@@ -326,13 +382,16 @@
             transition: opacity 0.2s, transform 0.2s;
             width: 200px;
         }
+
         #rematchBtn:disabled {
             opacity: 0.55;
             cursor: not-allowed;
         }
+
         #rematchBtn:not(:disabled):hover {
             transform: scale(1.04);
         }
+
         /* === IN-GAME MENU === */
         #inGameMenuBtn {
             display: none;
@@ -350,6 +409,7 @@
             user-select: none;
             -webkit-user-select: none;
         }
+
         #inGameMenuPopup {
             display: none;
             position: absolute;
@@ -365,6 +425,7 @@
             box-shadow: 0 0 30px rgba(231, 76, 60, 0.5);
             width: 250px;
         }
+
         #inGameMenuPopup button {
             margin: 10px 0;
             padding: 10px;
@@ -374,6 +435,7 @@
             border: none;
             width: 100%;
         }
+
         /* === CONTROLS === */
         .controls {
             margin-top: 10px;
@@ -382,6 +444,7 @@
             font-size: 12px;
             text-align: center;
         }
+
         #mobileControls {
             display: none;
             width: 100%;
@@ -392,10 +455,12 @@
             position: relative;
             z-index: 5;
         }
+
         .control-group {
             display: flex;
             gap: 15px;
         }
+
         .mob-btn {
             background-color: rgba(255, 255, 255, 0.2);
             border: 2px solid rgba(255, 255, 255, 0.5);
@@ -410,18 +475,22 @@
             user-select: none;
             -webkit-user-select: none;
         }
+
         .mob-btn:active {
             background-color: rgba(255, 255, 255, 0.6);
             transform: scale(0.95);
         }
+
         @media (max-width: 768px) {
             .controls {
                 display: none;
             }
+
             #mobileControls {
                 display: flex;
             }
         }
+
         /* === VŨ KHÍ HINT === */
         .weapon-hint {
             position: absolute;
@@ -439,11 +508,13 @@
             pointer-events: none;
             white-space: nowrap;
         }
+
         .hidden {
             display: none !important;
         }
     </style>
 </head>
+
 <body>
     <h1>⚔️ STICKMAN SHOWDOWN</h1>
 
@@ -456,18 +527,25 @@
 
             <div class="ns-field">
                 <label>👤 Tên Người Chơi 1 (Xanh / Bạn)</label>
-                <input type="text" id="p1NameInput" placeholder="Nhập tên P1..." maxlength="14" autocomplete="off" value="Người chơi 1" onkeydown="if(event.key==='Enter') enterGame('pvp')">
+                <input type="text" id="p1NameInput" placeholder="Nhập tên P1..." maxlength="14" autocomplete="off"
+                    value="Người chơi 1" onkeydown="if(event.key==='Enter') enterGame('pvp')">
             </div>
 
             <div class="ns-field" id="p2NameField">
                 <label>👤 Tên Người Chơi 2 (Đỏ - Nếu chơi 2 người)</label>
-                <input type="text" id="p2NameInput" placeholder="Nhập tên P2..." maxlength="14" autocomplete="off" value="Người chơi 2" onkeydown="if(event.key==='Enter') enterGame('pvp')">
+                <input type="text" id="p2NameInput" placeholder="Nhập tên P2..." maxlength="14" autocomplete="off"
+                    value="Người chơi 2" onkeydown="if(event.key==='Enter') enterGame('pvp')">
             </div>
 
-            <button id="btnEnterGame" onclick="enterGame('pvp')" style="margin-bottom: 12px;">🎮 VÀO GAME (2 NGƯỜI CHƠI) ➤</button>
+            <button id="btnEnterGame" onclick="enterGame('pvp')" style="margin-bottom: 12px;">🎮 VÀO GAME (2 NGƯỜI CHƠI)
+                ➤</button>
             <div style="display: flex; gap: 10px;">
-                <button onclick="enterGame('ai')" style="background: linear-gradient(135deg, #2ecc71, #27ae60); color: white; border: none; padding: 13px; border-radius: 10px; font-weight: bold; flex: 1; cursor: pointer;">🤖 ĐẤU BOT</button>
-                <button onclick="enterGame('online')" style="background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; border: none; padding: 13px; border-radius: 10px; font-weight: bold; flex: 1; cursor: pointer;">🌍 ONLINE</button>
+                <button onclick="enterGame('ai')"
+                    style="background: linear-gradient(135deg, #2ecc71, #27ae60); color: white; border: none; padding: 13px; border-radius: 10px; font-weight: bold; flex: 1; cursor: pointer;">🤖
+                    ĐẤU BOT</button>
+                <button onclick="enterGame('online')"
+                    style="background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; border: none; padding: 13px; border-radius: 10px; font-weight: bold; flex: 1; cursor: pointer;">🌍
+                    ONLINE</button>
             </div>
         </div>
     </div>
@@ -479,7 +557,8 @@
                 <button onclick="showDifficultyMenu()">🤖 ĐẤU VỚI MÁY (BOT)</button>
                 <button onclick="startGame('pvp')">👥 2 NGƯỜI CHƠI (CÙNG MÁY)</button>
                 <button class="btn-online" onclick="showOnlineMenu()">🌍 CHƠI ONLINE</button>
-                <button class="btn-back" onclick="showNameScreen()" style="margin-top:12px;">✏️ ĐỔI TÊN NHÂN VẬT</button>
+                <button class="btn-back" onclick="showNameScreen()" style="margin-top:12px;">✏️ ĐỔI TÊN NHÂN
+                    VẬT</button>
             </div>
 
             <div id="difficultyMenu">
@@ -526,7 +605,8 @@
                 <div id="rematchStatus"></div>
                 <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
                     <button id="restartBtn" class="btn-restart" onclick="restartGame()">🔄 CHƠI LẠI</button>
-                    <button id="rematchBtn" style="display:none;" onclick="requestOnlineRematch()">🔄 CHƠI LẠI (CẦN 2 NGƯỜI SẴN SÀNG)</button>
+                    <button id="rematchBtn" style="display:none;" onclick="requestOnlineRematch()">🔄 CHƠI LẠI (CẦN 2
+                        NGƯỜI SẴN SÀNG)</button>
                     <button class="btn-menu" onclick="resetToMenu(true)">🏠 QUAY VỀ MENU</button>
                 </div>
             </div>
@@ -578,7 +658,7 @@
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
             timeout: 20000
-        }) : { emit: () => {}, on: () => {} };
+        }) : { emit: () => { }, on: () => { } };
 
         const GRAVITY = 0.6;
         const GROUND_Y = 350;
@@ -633,7 +713,7 @@
                 this.vy += this.gravity;
                 this.x += this.vx;
                 this.y += this.vy;
-                
+
                 if (this.y + this.radius >= GROUND_Y - 2) {
                     this.y = GROUND_Y - 2 - this.radius;
                     this.vy = -this.vy * this.bounce;
@@ -645,7 +725,7 @@
                         this.rotationSpeed = 0;
                     }
                 }
-                
+
                 this.angle += this.rotationSpeed;
                 this.life--;
                 if (this.life <= 0) {
@@ -797,10 +877,14 @@
                         this.vy = 0;
                     }
                 }
-                if (this.x < this.radius) { this.x = this.radius;
-                    this.vx *= -0.5; }
-                if (this.x > MAP_WIDTH - this.radius) { this.x = MAP_WIDTH - this.radius;
-                    this.vx *= -0.5; }
+                if (this.x < this.radius) {
+                    this.x = this.radius;
+                    this.vx *= -0.5;
+                }
+                if (this.x > MAP_WIDTH - this.radius) {
+                    this.x = MAP_WIDTH - this.radius;
+                    this.vx *= -0.5;
+                }
 
                 if (this.timer <= 0) {
                     this.explode();
@@ -936,7 +1020,7 @@
                 if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
                     globalAudioCtx.resume();
                 }
-            } catch(e) {}
+            } catch (e) { }
             return globalAudioCtx;
         }
 
@@ -953,20 +1037,20 @@
                 }
                 let noiseNode = ctxAudio.createBufferSource();
                 noiseNode.buffer = buffer;
-                
+
                 let filter = ctxAudio.createBiquadFilter();
                 filter.type = 'bandpass';
                 filter.frequency.setValueAtTime(600, now);
-                
+
                 let gain = ctxAudio.createGain();
                 gain.gain.setValueAtTime(0.35, now);
                 gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-                
+
                 noiseNode.connect(filter);
                 filter.connect(gain);
                 gain.connect(ctxAudio.destination);
                 noiseNode.start(now);
-            } catch(e) {}
+            } catch (e) { }
         }
 
         function playSoundAK() {
@@ -982,20 +1066,20 @@
                 }
                 let noiseNode = ctxAudio.createBufferSource();
                 noiseNode.buffer = buffer;
-                
+
                 let filter = ctxAudio.createBiquadFilter();
                 filter.type = 'lowpass';
                 filter.frequency.setValueAtTime(450, now);
-                
+
                 let gain = ctxAudio.createGain();
                 gain.gain.setValueAtTime(0.4, now);
                 gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-                
+
                 noiseNode.connect(filter);
                 filter.connect(gain);
                 gain.connect(ctxAudio.destination);
                 noiseNode.start(now);
-            } catch(e) {}
+            } catch (e) { }
         }
 
         function playSoundShotgun() {
@@ -1003,7 +1087,7 @@
                 let ctxAudio = getAudioContext();
                 if (!ctxAudio) return;
                 let now = ctxAudio.currentTime;
-                let bufferSize = ctxAudio.sampleRate * 0.35; 
+                let bufferSize = ctxAudio.sampleRate * 0.35;
                 let buffer = ctxAudio.createBuffer(1, bufferSize, ctxAudio.sampleRate);
                 let data = buffer.getChannelData(0);
                 for (let i = 0; i < bufferSize; i++) {
@@ -1011,32 +1095,32 @@
                 }
                 let noiseNode = ctxAudio.createBufferSource();
                 noiseNode.buffer = buffer;
-                
+
                 let filter = ctxAudio.createBiquadFilter();
                 filter.type = 'lowpass';
                 filter.frequency.setValueAtTime(300, now);
-                
+
                 let gain = ctxAudio.createGain();
                 gain.gain.setValueAtTime(0.65, now);
                 gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                
+
                 let osc = ctxAudio.createOscillator();
                 let oscGain = ctxAudio.createGain();
                 osc.type = 'sawtooth';
                 osc.frequency.setValueAtTime(80, now);
                 oscGain.gain.setValueAtTime(0.15, now);
                 oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-                
+
                 noiseNode.connect(filter);
                 filter.connect(gain);
                 gain.connect(ctxAudio.destination);
                 osc.connect(oscGain);
                 oscGain.connect(ctxAudio.destination);
-                
+
                 noiseNode.start(now);
                 osc.start(now);
                 osc.stop(now + 0.1);
-            } catch(e) {}
+            } catch (e) { }
         }
 
         function playSoundSniper() {
@@ -1052,15 +1136,15 @@
                 }
                 let noiseNode = ctxAudio.createBufferSource();
                 noiseNode.buffer = buffer;
-                
+
                 let filter = ctxAudio.createBiquadFilter();
                 filter.type = 'lowpass';
                 filter.frequency.setValueAtTime(200, now);
-                
+
                 let gain = ctxAudio.createGain();
                 gain.gain.setValueAtTime(0.85, now);
                 gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-                
+
                 let osc = ctxAudio.createOscillator();
                 let oscGain = ctxAudio.createGain();
                 osc.type = 'square';
@@ -1068,17 +1152,17 @@
                 osc.frequency.exponentialRampToValueAtTime(60, now + 0.15);
                 oscGain.gain.setValueAtTime(0.3, now);
                 oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
-                
+
                 noiseNode.connect(filter);
                 filter.connect(gain);
                 gain.connect(ctxAudio.destination);
                 osc.connect(oscGain);
                 oscGain.connect(ctxAudio.destination);
-                
+
                 noiseNode.start(now);
                 osc.start(now);
                 osc.stop(now + 0.3);
-            } catch(e) {}
+            } catch (e) { }
         }
 
         function playSoundReload() {
@@ -1086,7 +1170,7 @@
                 let ctxAudio = getAudioContext();
                 if (!ctxAudio) return;
                 let now = ctxAudio.currentTime;
-                
+
                 let osc1 = ctxAudio.createOscillator();
                 let gain1 = ctxAudio.createGain();
                 osc1.type = 'triangle';
@@ -1095,7 +1179,7 @@
                 gain1.gain.exponentialRampToValueAtTime(0.005, now + 0.08);
                 osc1.connect(gain1); gain1.connect(ctxAudio.destination);
                 osc1.start(now); osc1.stop(now + 0.08);
-                
+
                 let osc2 = ctxAudio.createOscillator();
                 let gain2 = ctxAudio.createGain();
                 osc2.type = 'triangle';
@@ -1104,7 +1188,7 @@
                 gain2.gain.exponentialRampToValueAtTime(0.005, now + 0.33);
                 osc2.connect(gain2); gain2.connect(ctxAudio.destination);
                 osc2.start(now + 0.25); osc2.stop(now + 0.33);
-            } catch(e) {}
+            } catch (e) { }
         }
 
 
@@ -1914,8 +1998,8 @@
         // ============================================================
         //  SỰ KIỆN BÀN PHÍM & CẢM ỨNG
         // ============================================================
-        window.addEventListener("keydown", (e) => { 
-            if (keys.hasOwnProperty(e.key)) keys[e.key] = true; 
+        window.addEventListener("keydown", (e) => {
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
         });
         window.addEventListener("keyup", (e) => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
         canvas.addEventListener("mousedown", (e) => { if (e.button === 0) keys['click'] = true; });
@@ -1924,10 +2008,14 @@
         function setupTouchButton(buttonId, keyName) {
             const btn = document.getElementById(buttonId);
             if (!btn) return;
-            btn.addEventListener("touchstart", (e) => { e.preventDefault();
-                keys[keyName] = true; }, { passive: false });
-            btn.addEventListener("touchend", (e) => { e.preventDefault();
-                keys[keyName] = false; }, { passive: false });
+            btn.addEventListener("touchstart", (e) => {
+                e.preventDefault();
+                keys[keyName] = true;
+            }, { passive: false });
+            btn.addEventListener("touchend", (e) => {
+                e.preventDefault();
+                keys[keyName] = false;
+            }, { passive: false });
         }
         setupTouchButton('btnLeft', 'a');
         setupTouchButton('btnRight', 'd');
@@ -2465,7 +2553,7 @@
             if (!data) return;
             let dmgText = data.damageText || "-5 HP";
             hitEffects.push(new HitExplosion(data.x + 15, data.y + 20, dmgText));
-            
+
             if (data.targetId === myId) {
                 p1.hp = data.hp;
                 if (onlinePlayers[myId]) onlinePlayers[myId].hp = data.hp;
@@ -3446,7 +3534,7 @@
         //  POLYFILL roundRect (cho trình duyệt cũ)
         // ============================================================
         if (!CanvasRenderingContext2D.prototype.roundRect) {
-            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+            CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
                 if (typeof r === 'number') r = { tl: r, tr: r, br: r, bl: r };
                 let rad = { tl: r.tl || 0, tr: r.tr || 0, br: r.br || 0, bl: r.bl || 0 };
                 this.moveTo(x + rad.tl, y);
@@ -3470,4 +3558,5 @@
         requestAnimationFrame(draw);
     </script>
 </body>
+
 </html>
