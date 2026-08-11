@@ -388,7 +388,13 @@ io.on('connection', (socket) => {
                 facing: data.facing,
                 isAttacking: data.isAttacking,
                 hp: p.hp,
-                weapon: p.weapon || data.weapon
+                weapon: p.weapon || data.weapon,
+                aimAngle: data.aimAngle,
+                isProne: data.isProne,
+                isReloading: data.isReloading,
+                reloadTimer: data.reloadTimer,
+                ammo: data.ammo,
+                weaponAge: data.weaponAge
             });
         }
     });

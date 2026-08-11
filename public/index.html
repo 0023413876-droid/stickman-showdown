@@ -2303,10 +2303,30 @@
                     isAttacking: false,
                     weapon: null,
                     weaponAge: 0,
-                    label: `P${pIndex}`
+                    label: `P${pIndex}`,
+                    aimAngle: 0,
+                    isProne: false,
+                    isReloading: false,
+                    reloadTimer: 0,
+                    ammo: 0,
+                    animTimer: 0,
+                    muzzleFlashTimer: 0
                 };
             }
             let op = onlinePlayers[data.id];
+
+            // Nếu đối thủ bắt đầu bắn súng: sinh vỏ đạn rơi + lóe lửa đầu nòng + phát âm thanh
+            if (data.isAttacking && !op.isAttacking) {
+                if (op.weapon && op.weapon.type === 'gun') {
+                    op.muzzleFlashTimer = 4;
+                    shells.push(new Shell(op.x + 15, op.y + 25, op.facing || 1));
+                    if (op.weapon.id === 'pistol') playSoundPistol();
+                    else if (op.weapon.id === 'ak47') playSoundAK();
+                    else if (op.weapon.id === 'shotgun') playSoundShotgun();
+                    else if (op.weapon.id === 'sniper') playSoundSniper();
+                }
+            }
+
             op.x = data.x;
             op.y = data.y;
             op.vx = data.vx;
@@ -2316,6 +2336,12 @@
             if (data.hp !== undefined) op.hp = data.hp;
             op._lastActionTime = Date.now();
             if (data.weapon !== undefined) op.weapon = data.weapon;
+            if (data.aimAngle !== undefined) op.aimAngle = data.aimAngle;
+            if (data.isProne !== undefined) op.isProne = data.isProne;
+            if (data.isReloading !== undefined) op.isReloading = data.isReloading;
+            if (data.reloadTimer !== undefined) op.reloadTimer = data.reloadTimer;
+            if (data.ammo !== undefined) op.ammo = data.ammo;
+            if (data.weaponAge !== undefined) op.weaponAge = data.weaponAge;
         });
 
         socket.on("roomStateUpdate", (data) => {
@@ -2453,6 +2479,16 @@
             if (!data) return;
             hitEffects.push(new HitExplosion(data.x, data.y, '💥 NỔ!'));
             shakeTimer = 12;
+
+            if (p1 && p1.hp > 0) {
+                let dist = Math.hypot((p1.x + 15) - data.x, (p1.y + 40) - data.y);
+                if (dist < 120) {
+                    let pushDir = (p1.x + 15) >= data.x ? 1 : -1;
+                    p1.vx += pushDir * (120 - dist) * 0.12;
+                    p1.vy -= (120 - dist) * 0.08;
+                }
+            }
+
             for (let i = 0; i < 40; i++) {
                 let angle = Math.random() * Math.PI * 2;
                 let speed = Math.random() * 8 + 3;
@@ -2873,7 +2909,12 @@
                             facing: p1.facing,
                             isAttacking: p1.isAttacking,
                             weapon: p1.weapon,
-                            aimAngle: p1.aimAngle
+                            aimAngle: p1.aimAngle,
+                            isProne: p1.isProne,
+                            isReloading: p1.isReloading,
+                            reloadTimer: p1.reloadTimer,
+                            ammo: p1.ammo,
+                            weaponAge: p1.weaponAge
                         });
 
                         Object.keys(clientWeapons).forEach(id => {
@@ -3070,124 +3111,205 @@
                                 continue;
                             }
 
+                            if (op.vx && op.vx !== 0) {
+                                op.animTimer = (op.animTimer || 0) + 0.2;
+                            } else {
+                                op.animTimer = 0;
+                            }
+
+                            let barY = op.isProne ? GROUND_Y - 45 : op.y - 20;
+                            let nameY = barY - 8;
+
+                            // Tên người chơi Online
+                            ctx.fillStyle = "#ffffff";
+                            ctx.font = "bold 12px sans-serif";
+                            ctx.textAlign = "center";
+                            ctx.fillText(op.label || "Player", drawX + 15, nameY);
+
+                            // Máu
                             ctx.fillStyle = "#555";
-                            ctx.fillRect(drawX - 5, op.y - 20, 40, 6);
+                            ctx.fillRect(drawX - 5, barY, 40, 6);
                             ctx.fillStyle = op.color || '#e74c3c';
-                            ctx.fillRect(drawX - 5, op.y - 20, (Math.max(0, op.hp) / 100) * 40, 6);
+                            ctx.fillRect(drawX - 5, barY, (Math.max(0, op.hp) / 100) * 40, 6);
+
+                            // Vòng xoay nạp đạn RELOAD trên đầu nếu đang nạp
+                            if (op.isReloading) {
+                                ctx.save();
+                                ctx.strokeStyle = '#2ecc71';
+                                ctx.lineWidth = 2.5;
+                                ctx.beginPath();
+                                ctx.arc(drawX + 15, barY - 15, 7, -Math.PI / 2, Math.PI * 1.5);
+                                ctx.stroke();
+                                ctx.fillStyle = '#fff';
+                                ctx.font = 'bold 8px sans-serif';
+                                ctx.textAlign = 'center';
+                                ctx.fillText('RELOAD', drawX + 15, barY - 25);
+                                ctx.restore();
+                            }
 
                             ctx.strokeStyle = op.color || '#e74c3c';
                             ctx.lineWidth = 4;
                             ctx.lineCap = "round";
                             ctx.lineJoin = "round";
 
-                            let lean = op.isAttacking ? 8 * (op.facing || 1) : 0;
-                            let headX = drawX + 15 + lean;
-                            let headY = op.y + 15;
-                            let spineBottomX = drawX + 15;
-                            let spineBottomY = op.y + 50;
+                            if (op.isProne) {
+                                // DÁNG NẰM CỦA ĐỐI THỦ ONLINE
+                                let facing = op.facing || 1;
+                                let headX = drawX + (facing === 1 ? 25 : 5);
+                                let headY = GROUND_Y - 12;
+                                let spineX = drawX + (facing === 1 ? 5 : 25);
+                                let spineY = GROUND_Y - 12;
 
-                            ctx.beginPath();
-                            ctx.arc(headX, headY, 12, 0, Math.PI * 2);
-                            ctx.stroke();
-                            ctx.beginPath();
-                            ctx.moveTo(headX, headY + 12);
-                            ctx.lineTo(spineBottomX, spineBottomY);
-                            ctx.stroke();
-
-                            ctx.beginPath();
-                            ctx.moveTo(spineBottomX, spineBottomY);
-                            ctx.lineTo(spineBottomX - 12, op.y + 80);
-                            ctx.moveTo(spineBottomX, spineBottomY);
-                            ctx.lineTo(spineBottomX + 12, op.y + 80);
-                            ctx.stroke();
-
-                            let shoulderX = headX;
-                            let shoulderY = headY + 18;
-                            let oArmReach = op.isAttacking ? 25 : 15;
-                            let facing = op.facing || 1;
-                            let oHandX = shoulderX + (oArmReach * facing);
-                            let oHandY = shoulderY + (op.isAttacking ? 0 : 20);
-
-                            ctx.beginPath();
-                            if (op.isAttacking) {
-                                ctx.moveTo(shoulderX, shoulderY);
-                                ctx.lineTo(oHandX, shoulderY);
-                                ctx.stroke();
                                 ctx.beginPath();
-                                ctx.arc(oHandX, shoulderY, 6, 0, Math.PI * 2);
+                                ctx.arc(headX, headY, 10, 0, Math.PI * 2);
+                                ctx.stroke();
+
+                                ctx.beginPath();
+                                ctx.moveTo(headX, headY + 5);
+                                ctx.lineTo(spineX, spineY);
+                                ctx.stroke();
+
+                                let legBackX = spineX - 18 * facing;
+                                ctx.beginPath();
+                                ctx.moveTo(spineX, spineY);
+                                ctx.lineTo(legBackX, GROUND_Y - 4);
+                                ctx.moveTo(spineX, spineY);
+                                ctx.lineTo(legBackX - 8 * facing, GROUND_Y - 2);
+                                ctx.stroke();
+
+                                let shoulderX = headX;
+                                let shoulderY = headY + 2;
+                                let handX = shoulderX + (op.isAttacking ? 22 : 14) * facing;
+                                let handY = shoulderY + 2;
+
+                                ctx.beginPath();
+                                ctx.moveTo(shoulderX, shoulderY);
+                                ctx.lineTo(handX, handY);
+                                ctx.stroke();
+
+                                ctx.beginPath();
+                                ctx.arc(handX, handY, 4, 0, Math.PI * 2);
                                 ctx.fillStyle = op.color || '#e74c3c';
                                 ctx.fill();
-                            } else {
-                                ctx.moveTo(shoulderX, shoulderY);
-                                ctx.lineTo(shoulderX - 10 * facing, shoulderY + 15);
-                                ctx.lineTo(oHandX, oHandY);
-                                ctx.stroke();
-                            }
 
-                            if (op.weapon && op.weapon.color) {
-                                ctx.save();
-                                ctx.strokeStyle = op.weapon.color;
-                                ctx.lineWidth = 5;
-                                ctx.beginPath();
-                                let oWY = op.isAttacking ? shoulderY : oHandY;
-                                let oWX = op.isAttacking ? oHandX : oHandX;
+                                if (op.weapon && op.weapon.color) {
+                                    ctx.save();
+                                    ctx.strokeStyle = op.weapon.color;
+                                    ctx.fillStyle = op.weapon.color;
+                                    ctx.lineWidth = 4;
+                                    let wX = handX;
+                                    let wY = handY;
 
-                                if (op.weapon.id === 'ak47' || op.weapon.id === 'pistol' || op.weapon.id === 'shotgun' || op.weapon.id === 'sniper') {
-                                    ctx.moveTo(oWX, oWY);
-                                    ctx.lineTo(oWX + 20 * facing, oWY - 2);
-                                    ctx.lineTo(oWX + 20 * facing, oWY + 6);
-                                    ctx.lineTo(oWX, oWY + 4);
-                                    ctx.closePath();
-                                    ctx.fillStyle = op.weapon.color;
-                                    ctx.fill();
-                                    ctx.stroke();
-                                    ctx.beginPath();
-                                    ctx.moveTo(oWX + 20 * facing, oWY + 2);
-                                    ctx.lineTo(oWX + 28 * facing, oWY + 2);
-                                    ctx.stroke();
-                                } else if (op.weapon.id === 'sword') {
-                                    ctx.moveTo(oWX, oWY);
-                                    ctx.lineTo(oWX + 24 * facing, oWY - 20);
-                                    ctx.stroke();
-                                    ctx.shadowColor = op.weapon.color;
-                                    ctx.shadowBlur = 10;
-                                    ctx.beginPath();
-                                    ctx.arc(oWX + 24 * facing, oWY - 20, 4, 0, Math.PI * 2);
-                                    ctx.fillStyle = '#fff';
-                                    ctx.fill();
-                                    ctx.shadowBlur = 0;
-                                } else if (op.weapon.id === 'spear') {
-                                    ctx.moveTo(oWX - 12 * facing, oWY + 6);
-                                    ctx.lineTo(oWX + 32 * facing, oWY - 14);
-                                    ctx.stroke();
-                                    ctx.shadowColor = op.weapon.color;
-                                    ctx.shadowBlur = 8;
-                                    ctx.beginPath();
-                                    ctx.moveTo(oWX + 32 * facing, oWY - 14);
-                                    ctx.lineTo(oWX + 40 * facing, oWY - 20);
-                                    ctx.stroke();
-                                    ctx.shadowBlur = 0;
-                                } else if (op.weapon.id === 'nade') {
-                                    ctx.shadowColor = '#ff6b6b';
-                                    ctx.shadowBlur = 12;
-                                    ctx.beginPath();
-                                    ctx.arc(oWX, oWY, 8, 0, Math.PI * 2);
-                                    ctx.fillStyle = op.weapon.color;
-                                    ctx.fill();
-                                    ctx.shadowBlur = 0;
-                                    ctx.fillStyle = '#dfe6e9';
-                                    ctx.beginPath();
-                                    ctx.arc(oWX, oWY - 6, 2.5, 0, Math.PI * 2);
-                                    ctx.fill();
+                                    if (op.weapon.id === 'ak47' || op.weapon.id === 'pistol' || op.weapon.id === 'shotgun' || op.weapon.id === 'sniper') {
+                                        ctx.fillRect(wX, wY - 3, 20 * facing, 6);
+                                        ctx.strokeRect(wX, wY - 3, 20 * facing, 6);
+                                    } else if (op.weapon.id === 'sword') {
+                                        ctx.beginPath(); ctx.moveTo(wX, wY); ctx.lineTo(wX + 26 * facing, wY); ctx.stroke();
+                                    } else if (op.weapon.id === 'spear') {
+                                        ctx.beginPath(); ctx.moveTo(wX, wY); ctx.lineTo(wX + 35 * facing, wY); ctx.stroke();
+                                    } else if (op.weapon.id === 'nade') {
+                                        ctx.beginPath(); ctx.arc(wX, wY, 6, 0, Math.PI * 2); ctx.fill();
+                                    }
+                                    ctx.restore();
                                 }
-                                ctx.restore();
-                            }
 
-                            ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                            ctx.font = 'bold 10px sans-serif';
-                            ctx.textAlign = 'center';
-                            let label = op.label || ('P' + (Object.keys(onlinePlayers).indexOf(id) + 1));
-                            ctx.fillText(label, drawX + 15, op.y - 26);
+                            } else {
+                                // DÁNG ĐỨNG NGUYÊN BẢN CỦA ĐỐI THỦ ONLINE
+                                let facing = op.facing || 1;
+                                let lean = op.isAttacking && op.weapon && op.weapon.type === 'gun' ? 5 * facing : 0;
+                                let headX = drawX + 15 + lean;
+                                let headY = op.y + 15;
+                                let spineBottomX = drawX + 15;
+                                let spineBottomY = op.y + 50;
+
+                                ctx.beginPath();
+                                ctx.arc(headX, headY, 12, 0, Math.PI * 2);
+                                ctx.stroke();
+                                ctx.beginPath();
+                                ctx.moveTo(headX, headY + 12);
+                                ctx.lineTo(spineBottomX, spineBottomY);
+                                ctx.stroke();
+
+                                let leftLegX = spineBottomX - 12, leftLegY = op.y + 80;
+                                let rightLegX = spineBottomX + 12, rightLegY = op.y + 80;
+                                if (op.vx && op.vx !== 0) {
+                                    let swing = Math.sin(op.animTimer || 0) * 18;
+                                    leftLegX = spineBottomX + swing;
+                                    rightLegX = spineBottomX - swing;
+                                }
+                                ctx.beginPath();
+                                ctx.moveTo(spineBottomX, spineBottomY);
+                                ctx.lineTo(leftLegX, leftLegY);
+                                ctx.moveTo(spineBottomX, spineBottomY);
+                                ctx.lineTo(rightLegX, rightLegY);
+                                ctx.stroke();
+
+                                let shoulderX = headX;
+                                let shoulderY = headY + 18;
+                                let aimAngle = op.aimAngle !== undefined ? op.aimAngle : (facing === 1 ? 0 : Math.PI);
+                                let armLength = op.isAttacking ? 25 : 18;
+                                let handX = shoulderX + Math.cos(aimAngle) * armLength;
+                                let handY = shoulderY + Math.sin(aimAngle) * armLength;
+
+                                ctx.beginPath();
+                                ctx.moveTo(shoulderX, shoulderY);
+                                ctx.lineTo(handX, handY);
+                                ctx.stroke();
+
+                                ctx.beginPath();
+                                ctx.arc(handX, handY, 4, 0, Math.PI * 2);
+                                ctx.fillStyle = op.color || '#e74c3c';
+                                ctx.fill();
+
+                                if (op.weapon && op.weapon.color) {
+                                    ctx.save();
+                                    ctx.strokeStyle = op.weapon.color;
+                                    ctx.fillStyle = op.weapon.color;
+                                    ctx.lineWidth = 5;
+                                    ctx.translate(handX, handY);
+                                    ctx.rotate(aimAngle);
+                                    if (Math.cos(aimAngle) < 0) {
+                                        ctx.scale(1, -1);
+                                    }
+
+                                    if (op.weapon.id === 'ak47' || op.weapon.id === 'pistol') {
+                                        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(20, -2); ctx.lineTo(20, 6); ctx.lineTo(0, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+                                        ctx.beginPath(); ctx.moveTo(20, 2); ctx.lineTo(28, 2); ctx.stroke();
+                                    } else if (op.weapon.id === 'shotgun') {
+                                        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(16, -2); ctx.lineTo(16, 6); ctx.lineTo(0, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+                                        ctx.beginPath(); ctx.moveTo(16, 2); ctx.lineTo(24, 2); ctx.stroke();
+                                    } else if (op.weapon.id === 'sniper') {
+                                        ctx.beginPath(); ctx.moveTo(-4, 2); ctx.lineTo(26, 0); ctx.stroke();
+                                        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(18, 0); ctx.lineTo(18, 6); ctx.lineTo(-4, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+                                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(4, -6); ctx.lineTo(14, -6); ctx.stroke();
+                                    } else if (op.weapon.id === 'sword') {
+                                        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(24, -20); ctx.stroke();
+                                        ctx.shadowColor = op.weapon.color; ctx.shadowBlur = 10;
+                                        ctx.beginPath(); ctx.arc(24, -20, 4, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.shadowBlur = 0;
+                                    } else if (op.weapon.id === 'spear') {
+                                        ctx.beginPath(); ctx.moveTo(-12, 6); ctx.lineTo(32, -14); ctx.stroke();
+                                        ctx.shadowColor = op.weapon.color; ctx.shadowBlur = 8;
+                                        ctx.beginPath(); ctx.moveTo(32, -14); ctx.lineTo(40, -20); ctx.stroke(); ctx.shadowBlur = 0;
+                                    } else if (op.weapon.id === 'nade') {
+                                        ctx.shadowColor = '#ff6b6b'; ctx.shadowBlur = 12;
+                                        ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+                                    }
+
+                                    if (op.muzzleFlashTimer > 0) {
+                                        op.muzzleFlashTimer--;
+                                        ctx.save();
+                                        ctx.shadowColor = '#ffbe76';
+                                        ctx.shadowBlur = 15;
+                                        ctx.fillStyle = '#fff';
+                                        ctx.beginPath();
+                                        ctx.arc(24, 0, 6, 0, Math.PI * 2);
+                                        ctx.fill();
+                                        ctx.restore();
+                                    }
+
+                                    ctx.restore();
+                                }
+                            }
                         }
                     }
 
@@ -3229,16 +3351,20 @@
 
                     // === HUD THÔNG TIN ===
                     ctx.save();
-                    ctx.fillStyle = 'rgba(10, 10, 25, 0.75)';
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+                    let hudPlayerCount = (gameMode === 'online') ? Math.max(2, Object.keys(onlinePlayers).length) : 2;
+                    let hudHeight = Math.max(75, 25 + hudPlayerCount * 22);
+
+                    ctx.fillStyle = 'rgba(10, 10, 25, 0.85)';
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
                     ctx.lineWidth = 1.5;
                     ctx.beginPath();
-                    ctx.roundRect(10, 10, 360, 75, 8);
+                    ctx.roundRect(10, 10, 370, hudHeight, 8);
                     ctx.fill();
                     ctx.stroke();
 
                     ctx.font = 'bold 11px sans-serif';
                     ctx.textAlign = 'left';
+
                     if (gameMode !== 'online') {
                         let wp1 = p1 && p1.weapon ? p1.weapon.name : 'Đấm tay';
                         if (p1 && p1.weapon && p1.weapon.type === 'gun') {
@@ -3270,19 +3396,33 @@
                         ctx.font = 'italic 9px sans-serif';
                         ctx.fillText(`Súng hết 10 viên thì mất | Vũ khí cận chiến mất sau 10s`, 20, 68);
                     } else {
-                        let me = onlinePlayers[myId];
-                        if (me) {
-                            let wp = me.weapon ? me.weapon.name : 'Đấm tay';
-                            ctx.fillStyle = '#3498db';
-                            ctx.fillText(`🔵 Bạn`, 20, 28);
+                        let yOffset = 28;
+                        let pKeys = Object.keys(onlinePlayers);
+                        pKeys.forEach((id, idx) => {
+                            let op = onlinePlayers[id];
+                            if (!op) return;
+                            let isMe = id === myId;
+                            let pName = op.label || (isMe ? 'Bạn' : `P${idx + 1}`);
+                            let pColor = op.color || ONLINE_COLORS[idx % ONLINE_COLORS.length];
+                            let currentWp = (isMe && p1 && p1.weapon) ? p1.weapon : op.weapon;
+                            let wpName = currentWp ? currentWp.name : 'Đấm tay';
+
+                            if (currentWp && currentWp.type === 'gun') {
+                                let ammoCount = (isMe && p1 && p1.weapon) ? p1.ammo : (op.ammo !== undefined ? op.ammo : 10);
+                                wpName += ` (🟡 ${ammoCount}/10)`;
+                            } else if (currentWp && currentWp.type !== 'gun') {
+                                let age = (isMe && p1 && p1.weapon) ? p1.weaponAge : (op.weaponAge || 0);
+                                let secsLeft = Math.max(0, Math.ceil((600 - age) / 60));
+                                wpName += ` (⏱ ${secsLeft}s)`;
+                            }
+
+                            ctx.fillStyle = pColor;
+                            ctx.fillText(`${isMe ? '🔵' : '🔴'} ${pName}`, 20, yOffset);
                             ctx.fillStyle = '#fff';
-                            ctx.fillText(`Máu: ${me.hp} | Súng: ${wp}`, 65, 28);
-                        }
-                        ctx.fillStyle = '#fff';
-                        ctx.fillText(`👥 Trận đấu online (${Object.keys(onlinePlayers).length} người chơi)`, 20, 48);
-                        ctx.fillStyle = '#aaaaaa';
-                        ctx.font = 'italic 9px sans-serif';
-                        ctx.fillText(`Nhặt vũ khí rơi trên bản đồ để chiến đấu!`, 20, 68);
+                            ctx.fillText(`Máu: ${op.hp} | ${wpName}`, 120, yOffset);
+
+                            yOffset += 20;
+                        });
                     }
                     ctx.restore();
 
