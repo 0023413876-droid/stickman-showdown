@@ -26,15 +26,15 @@ const matchQueues = {
     5: []
 };
 
-// --- CẤU HÌNH HỆ THỐNG VŨ KHÍ & SÁT THƯƠNG ĐÃ GIẢM ---
+// --- CẤU HÌNH HỆ THỐNG VŨ KHÍ & SÁT THƯƠNG ĐỒNG BỘ ---
 const WEAPON_TYPES = [
-    { id: 'ak47', name: 'AK47', color: '#ff4757', type: 'gun', damage: 4 },      // 4 sát thương / viên đạn
-    { id: 'pistol', name: 'Súng Lục', color: '#ffa502', type: 'gun', damage: 3 },  // 3 sát thương / viên đạn
-    { id: 'shotgun', name: 'Súng Săn M3', color: '#a29bfe', type: 'gun', damage: 4 }, // Súng săn bắn chùm 5 viên đạn
-    { id: 'sniper', name: 'AWP Sniper', color: '#ff7675', type: 'gun', damage: 20 }, // Súng ngắm sát thương lớn
-    { id: 'nade', name: 'Lựu Đạn', color: '#2ed573', type: 'grenade', damage: 25 }, // Sát thương nổ lan diện rộng
-    { id: 'spear', name: 'Giáo', color: '#747d8c', type: 'melee', damage: 6 },     // 6 sát thương
-    { id: 'sword', name: 'Kiếm', color: '#1e90ff', type: 'melee', damage: 8 }      // 8 sát thương
+    { id: 'ak47', name: 'AK-47', color: '#e67e22', type: 'gun', damage: 7, maxAmmo: 10, reloadTime: 90, range: 75 },
+    { id: 'pistol', name: 'Lục Bạc', color: '#95a5a6', type: 'gun', damage: 5, maxAmmo: 10, reloadTime: 50, range: 55 },
+    { id: 'shotgun', name: 'Súng Săn M3', color: '#a29bfe', type: 'gun', damage: 6, maxAmmo: 10, reloadTime: 120, range: 45 },
+    { id: 'sniper', name: 'AWP Sniper', color: '#ff7675', type: 'gun', damage: 35, maxAmmo: 10, reloadTime: 150, range: 120 },
+    { id: 'sword', name: 'Kiếm Laser', color: '#00d2d3', type: 'melee', damage: 10, range: 50 },
+    { id: 'spear', name: 'Thương Bạc', color: '#f5cd79', type: 'melee', damage: 9, range: 65 },
+    { id: 'nade', name: 'Lựu Đạn', color: '#10ac84', type: 'grenade', damage: 50, range: 45 }
 ];
 
 // Quản lý trạng thái theo từng phòng
@@ -272,9 +272,11 @@ io.on('connection', (socket) => {
     // TÍNH NĂNG MÁU THỜI GIAN THỰC KHI ĐÁNH TRÚNG / ĐẤM CHAY (CHO CẬN CHIẾN)
     socket.on('playerHit', (data) => {
         if (data.roomId && data.targetId) {
-            let finalDamage = 3; // Sát thương đấm tay gốc giảm xuống 3
+            let finalDamage = 5; // Sát thương đấm tay mặc định là 5 HP
             if (data.weapon && data.weapon.damage) {
                 finalDamage = data.weapon.damage;
+            } else if (data.weapon && data.weapon.dmg) {
+                finalDamage = data.weapon.dmg;
             }
 
             // Đồng bộ cập nhật trừ máu trên Server
@@ -308,6 +310,12 @@ io.on('connection', (socket) => {
             // Cập nhật tọa độ real-time & vũ khí từ client lên bộ dữ liệu server
             p.x = data.x;
             p.y = data.y;
+            p.facing = data.facing;
+            p.isProne = data.isProne;
+            p.aimAngle = data.aimAngle;
+            p.isReloading = data.isReloading;
+            p.reloadTimer = data.reloadTimer;
+            p.ammo = data.ammo;
             if (data.weapon !== undefined) {
                 p.weapon = data.weapon;
             }
@@ -331,44 +339,50 @@ io.on('connection', (socket) => {
                     if (weapon.type === 'gun') {
                         if (!roomBullets[roomId]) roomBullets[roomId] = [];
 
-                        let aimAngle = data.aimAngle || (data.facing === 1 ? 0 : Math.PI);
+                        let aimAngle = data.aimAngle !== undefined ? data.aimAngle : (data.facing === 1 ? 0 : Math.PI);
+                        let spawnY = data.isProne ? 335 : data.y + 25;
+                        let spawnX = data.facing === 1 ? data.x + 35 : data.x - 10;
+
                         if (weapon.id === 'shotgun') {
                             for (let i = -2; i <= 2; i++) {
                                 let spreadAngle = aimAngle + (i * 0.08);
                                 roomBullets[roomId].push({
-                                    x: data.facing === 1 ? data.x + 35 : data.x - 10,
-                                    y: data.y + 25,
-                                    vx: Math.cos(spreadAngle) * 16,
-                                    vy: Math.sin(spreadAngle) * 16,
+                                    x: spawnX,
+                                    y: spawnY,
+                                    vx: Math.cos(spreadAngle) * 18,
+                                    vy: Math.sin(spreadAngle) * 18,
                                     color: weapon.color,
-                                    damage: weapon.damage || 4,
+                                    damage: weapon.damage || weapon.dmg || 6,
                                     attackerId: socket.id
                                 });
                             }
                         } else {
-                            let bulletSpeed = weapon.id === 'sniper' ? 24 : 16;
+                            let bulletSpeed = weapon.id === 'sniper' ? 38 : (weapon.id === 'ak47' ? 24 : 22);
                             roomBullets[roomId].push({
-                                x: data.facing === 1 ? data.x + 35 : data.x - 10,
-                                y: data.y + 25,
+                                x: spawnX,
+                                y: spawnY,
                                 vx: Math.cos(aimAngle) * bulletSpeed,
                                 vy: Math.sin(aimAngle) * bulletSpeed,
                                 color: weapon.color,
-                                damage: weapon.damage || 4,
+                                damage: weapon.damage || weapon.dmg || 7,
                                 attackerId: socket.id
                             });
                         }
                     } else if (weapon.type === 'grenade') {
                         if (!roomGrenades[roomId]) roomGrenades[roomId] = [];
 
-                        let aimAngle = data.aimAngle || (data.facing === 1 ? 0 : Math.PI);
+                        let aimAngle = data.aimAngle !== undefined ? data.aimAngle : (data.facing === 1 ? 0 : Math.PI);
+                        let spawnY = data.isProne ? 330 : data.y + 20;
+                        let spawnX = data.facing === 1 ? data.x + 30 : data.x - 10;
+                        let speed = 9;
                         roomGrenades[roomId].push({
-                            x: data.facing === 1 ? data.x + 30 : data.x - 10,
-                            y: data.y + 20,
-                            vx: Math.cos(aimAngle) * 8,
-                            vy: Math.sin(aimAngle) * 8 - 2,
+                            x: spawnX,
+                            y: spawnY,
+                            vx: Math.cos(aimAngle) * speed,
+                            vy: Math.sin(aimAngle) * speed - 2,
                             timer: 5000,
                             color: weapon.color,
-                            damage: weapon.damage,
+                            damage: weapon.damage || weapon.dmg || 50,
                             attackerId: socket.id
                         });
 
@@ -557,7 +571,7 @@ function checkMatchOver(roomId) {
     }
 }
 
-// --- VÒNG LẶP TỰ ĐỘNG THẢ VŨ KHÍ KHÔNG GIAN (MỖI 8 GIÂY) & TỰ HỦY SAU 5 GIÂY NẾU NẰM ĐẤT ---
+// --- VÒNG LẶP TỰ ĐỘNG THẢ VŨ KHÍ KHÔNG GIAN (MỖI 8 GIÂY) & TỰ HỦY SAU 15 GIÂY NẾU NẰM ĐẤT ---
 setInterval(() => {
     Object.keys(roomPlayers).forEach(roomId => {
         const roomExists = io.sockets.adapter.rooms.get(roomId);
@@ -567,26 +581,28 @@ setInterval(() => {
 
             const weaponId = 'wp_' + Math.random().toString(36).substr(2, 9);
             const randomType = WEAPON_TYPES[Math.floor(Math.random() * WEAPON_TYPES.length)];
+            const now = Date.now();
 
             roomWeapons[roomId][weaponId] = {
                 id: weaponId,
-                info: randomType,
+                info: { ...randomType },
                 x: 100 + Math.random() * 1400, // Thả ngẫu nhiên trải rộng theo bản đồ rộng 1600px
                 y: -30,
-                isGrounded: false
+                isGrounded: false,
+                spawnTime: now
             };
 
             // Báo cho phòng biết có vũ khí mới từ trên trời rơi xuống
             io.to(roomId).emit('weaponSpawned', roomWeapons[roomId][weaponId]);
 
-            // CƠ CHẾ TỰ HỦY: Sau đúng 5 giây (5000ms), nếu vũ khí vẫn còn nằm đất (chưa bị nhặt) -> Xóa đi
+            // CƠ CHẾ TỰ HỦY: Sau đúng 15 giây (15000ms), nếu vũ khí vẫn còn nằm đất (chưa bị nhặt) -> Xóa đi
             setTimeout(() => {
                 if (roomWeapons[roomId] && roomWeapons[roomId][weaponId]) {
                     delete roomWeapons[roomId][weaponId];
                     // Phát lệnh xuống tất cả client để đồng bộ xóa vật phẩm khỏi màn hình
                     io.to(roomId).emit('weaponExpired', { weaponId: weaponId });
                 }
-            }, 5000);
+            }, 15000);
 
         } else {
             delete roomWeapons[roomId];
@@ -621,7 +637,7 @@ setInterval(() => {
 
             let hitRegistered = false;
 
-            // Xử lý va chạm đạn thực tế giữa các người chơi trên Server bằng Hitbox hình chữ nhật
+            // Xử lý va chạm đạn thực tế giữa các người chơi trên Server bằng Hitbox hình chữ nhật (xét tư thế nằm/đứng)
             if (roomPlayers[roomId]) {
                 const players = roomPlayers[roomId];
                 for (let pId in players) {
@@ -630,8 +646,11 @@ setInterval(() => {
                     let target = players[pId];
                     if (target.hp <= 0) continue;
 
+                    let targetY = target.isProne ? (350 - 35) : target.y;
+                    let targetHeight = target.isProne ? 35 : (target.height || 80);
+
                     // Kiểm tra vùng trúng đạn (Hitbox của Stickman)
-                    if (b.x >= target.x && b.x <= target.x + target.width && b.y >= target.y && b.y <= target.y + target.height) {
+                    if (b.x >= target.x && b.x <= target.x + target.width && b.y >= targetY && b.y <= targetY + targetHeight) {
                         target.hp -= b.damage;
                         if (target.hp < 0) target.hp = 0;
 

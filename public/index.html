@@ -620,6 +620,7 @@
             <div class="control-group">
                 <div class="mob-btn" id="btnDown">⬇️</div>
                 <div class="mob-btn" id="btnJump">⬆️</div>
+                <div class="mob-btn" id="btnReload">🔄</div>
                 <div class="mob-btn" id="btnAttack">👊</div>
             </div>
         </div>
@@ -628,7 +629,7 @@
     <div class="controls">
         <div>
             <h3 style="color: #3498db;">🔵 Người chơi 1</h3>
-            <p>A, D: Di chuyển | W: Nhảy | S: Nằm | Click chuột: Tấn công</p>
+            <p>A, D: Di chuyển | W: Nhảy | S: Nằm | R: Nạp đạn | Click chuột: Tấn công</p>
         </div>
         <div id="p2ControlText">
             <h3 style="color: #e74c3c;">🔴 Người chơi 2</h3>
@@ -1438,11 +1439,7 @@
                 if (weapon && weapon.type === 'gun') {
                     if (this.isReloading) return;
                     if (this.ammo <= 0) {
-                        this.weapon = null;
-                        this.weaponAge = 0;
-                        this.isReloading = false;
-                        updateWeaponHint(null);
-                        hitEffects.push(new HitExplosion(this.x + 15, this.y - 10, 'HẾT ĐẠN!', '#e74c3c'));
+                        triggerReload(this);
                         return;
                     }
                 }
@@ -1455,71 +1452,73 @@
                 let spawnX = (this.x + this.width / 2) + Math.cos(angle) * spawnDist;
                 let spawnY = (this.isProne ? GROUND_Y - 15 : this.y + 25) + Math.sin(angle) * spawnDist;
 
-                // Thời gian hồi đòn đánh (Cooldown): Đòn đánh thường đấm tay giảm từ 60 frame (1s) xuống 15 frame (~0.25s)
                 let cooldownBase = 15;
 
                 if (weapon) {
                     if (weapon.type === 'gun') {
-                        if (gameMode !== 'online') {
-                            // Chế độ offline: tạo đạn local
-                            this.ammo--;
-                            this.muzzleFlashTimer = 4;
-                            shells.push(new Shell(this.x + this.width / 2, spawnY, this.facing));
+                        this.ammo--;
+                        this.muzzleFlashTimer = 4;
+                        shells.push(new Shell(this.x + this.width / 2, spawnY, this.facing));
 
-                            let dmg = weapon.dmg;
-                            let bulletColor = weapon.color || '#ffdd57';
-
-                            if (weapon.id === 'pistol') {
-                                let b = new Bullet(spawnX, spawnY, angle, dmg, this, bulletColor, 22);
-                                bullets.push(b);
-                                shakeTimer = 1.8;
-                                this.x -= Math.cos(angle) * 1.5;
+                        let recoil = 1.5;
+                        if (weapon.id === 'pistol') {
+                            cooldownBase = 16; recoil = 1.5; shakeTimer = 1.8;
+                            if (gameMode !== 'online') {
+                                bullets.push(new Bullet(spawnX, spawnY, angle, weapon.dmg, this, weapon.color || '#ffdd57', 22));
                                 playSoundPistol();
-                                cooldownBase = 16;
-                            } else if (weapon.id === 'ak47') {
-                                let b = new Bullet(spawnX, spawnY, angle + (Math.random() - 0.5) * 0.05, dmg, this, bulletColor, 24);
+                            }
+                        } else if (weapon.id === 'ak47') {
+                            cooldownBase = 10; recoil = 2.0; shakeTimer = 3.5;
+                            if (gameMode !== 'online') {
+                                let b = new Bullet(spawnX, spawnY, angle + (Math.random() - 0.5) * 0.05, weapon.dmg, this, weapon.color || '#ffdd57', 24);
                                 if (!this.isGrounded) b.vy += (Math.random() - 0.5) * 1.5;
                                 bullets.push(b);
-                                shakeTimer = 3.5;
-                                this.x -= Math.cos(angle) * 2.0;
                                 playSoundAK();
-                                cooldownBase = 10;
-                            } else if (weapon.id === 'shotgun') {
+                            }
+                        } else if (weapon.id === 'shotgun') {
+                            cooldownBase = 35; recoil = 6.5; shakeTimer = 8;
+                            if (gameMode !== 'online') {
                                 for (let i = 0; i < 5; i++) {
                                     let spreadAngle = angle + (i - 2) * 0.1;
-                                    let b = new Bullet(spawnX, spawnY, spreadAngle, dmg, this, bulletColor, 18);
-                                    b.life = 35;
-                                    b.radius = 4;
+                                    let b = new Bullet(spawnX, spawnY, spreadAngle, weapon.dmg, this, weapon.color || '#ffdd57', 18);
+                                    b.life = 35; b.radius = 4;
                                     bullets.push(b);
                                 }
-                                shakeTimer = 8;
-                                this.x -= Math.cos(angle) * 6.5;
                                 playSoundShotgun();
-                                cooldownBase = 35;
-                            } else if (weapon.id === 'sniper') {
-                                let b = new Bullet(spawnX, spawnY, angle, dmg, this, bulletColor, 38);
+                            }
+                        } else if (weapon.id === 'sniper') {
+                            cooldownBase = 55; recoil = 9.5; shakeTimer = 12;
+                            if (gameMode !== 'online') {
+                                let b = new Bullet(spawnX, spawnY, angle, weapon.dmg, this, weapon.color || '#ffdd57', 38);
                                 b.radius = 3;
                                 bullets.push(b);
-                                shakeTimer = 12;
-                                this.x -= Math.cos(angle) * 9.5;
                                 playSoundSniper();
-                                cooldownBase = 55;
                             }
-                        } else {
-                            // Chế độ online: server tạo đạn, chỉ phát âm thanh và hiệu ứng visual
-                            this.muzzleFlashTimer = 4;
-                            shells.push(new Shell(this.x + this.width / 2, spawnY, this.facing));
-                            if (weapon.id === 'pistol') { playSoundPistol(); cooldownBase = 16; shakeTimer = 1.8; }
-                            else if (weapon.id === 'ak47') { playSoundAK(); cooldownBase = 10; shakeTimer = 3.5; }
-                            else if (weapon.id === 'shotgun') { playSoundShotgun(); cooldownBase = 35; shakeTimer = 8; }
-                            else if (weapon.id === 'sniper') { playSoundSniper(); cooldownBase = 55; shakeTimer = 12; }
                         }
+
+                        // Áp dụng giật lùi (recoil pushback) cho nhân vật
+                        this.x -= Math.cos(angle) * recoil;
+                        if (this.x < 0) this.x = 0;
+                        if (this.x + this.width > MAP_WIDTH) this.x = MAP_WIDTH - this.width;
+
+                        // Âm thanh bắn ở chế độ Online
+                        if (gameMode === 'online') {
+                            if (weapon.id === 'pistol') playSoundPistol();
+                            else if (weapon.id === 'ak47') playSoundAK();
+                            else if (weapon.id === 'shotgun') playSoundShotgun();
+                            else if (weapon.id === 'sniper') playSoundSniper();
+                        }
+
+                        // Tự động nạp đạn khi bắn hết viên cuối
+                        if (this.ammo <= 0 && !this.isReloading) {
+                            triggerReload(this);
+                        }
+
                     } else if (weapon.type === 'grenade') {
                         if (gameMode !== 'online') {
                             let g = new Grenade(spawnX, spawnY, angle, this);
                             grenades.push(g);
                         }
-                        // Online: server xử lý lựu đạn, nhận về qua weaponUsedUp
                         this.weapon = null;
                         this.weaponAge = 0;
                         updateWeaponHint(null);
@@ -1596,6 +1595,23 @@
                     ctx.beginPath();
                     ctx.arc(drawX + 15, barY - 12, 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * cdRatio);
                     ctx.stroke();
+                    ctx.restore();
+                }
+
+                // Vòng xoay nạp đạn RELOAD trên đầu nhân vật
+                if (this.isReloading) {
+                    ctx.save();
+                    ctx.strokeStyle = '#2ecc71';
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    let maxRt = (this.weapon && this.weapon.reloadTime) ? this.weapon.reloadTime : 90;
+                    let relRatio = 1 - (this.reloadTimer / maxRt);
+                    ctx.arc(drawX + 15, barY - 15, 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * relRatio);
+                    ctx.stroke();
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 8px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('RELOAD', drawX + 15, barY - 25);
                     ctx.restore();
                 }
 
@@ -1960,7 +1976,7 @@
                     ctx.globalAlpha = this.life;
                     ctx.fill();
                 });
-                ctx.globalAlpha = Math.min(1, this.life * 1.5);
+                            ctx.globalAlpha = Math.min(1, this.life * 1.5);
                 ctx.font = "italic bold 16px Arial";
                 ctx.fillStyle = this.damageText.includes("+") ? "#2ecc71" : "#ff3838";
                 ctx.strokeStyle = "#ffffff";
@@ -1982,11 +1998,12 @@
         let cameraX = 0;
         let offlineWeaponSpawnTimer = 0;
 
-        const keys = {
+        let keys = {
             a: false,
             d: false,
             w: false,
             s: false,
+            r: false,
             click: false,
             ArrowLeft: false,
             ArrowRight: false,
@@ -1995,11 +2012,24 @@
             l: false
         };
 
+        function triggerReload(player) {
+            if (!player || player.hp <= 0) return;
+            if (player.weapon && player.weapon.type === 'gun' && !player.isReloading && player.ammo < (player.weapon.maxAmmo || 10)) {
+                player.isReloading = true;
+                player.reloadTimer = player.weapon.reloadTime || 90;
+                playSoundReload();
+                hitEffects.push(new HitExplosion(player.x + 15, player.y - 10, 'RELOADING...', '#f1c40f'));
+            }
+        }
+
         // ============================================================
         //  SỰ KIỆN BÀN PHÍM & CẢM ỨNG
         // ============================================================
         window.addEventListener("keydown", (e) => {
             if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
+            if (e.key === 'r' || e.key === 'R') {
+                triggerReload(p1);
+            }
         });
         window.addEventListener("keyup", (e) => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
         canvas.addEventListener("mousedown", (e) => { if (e.button === 0) keys['click'] = true; });
@@ -2021,7 +2051,19 @@
         setupTouchButton('btnRight', 'd');
         setupTouchButton('btnJump', 'w');
         setupTouchButton('btnDown', 's');
+        setupTouchButton('btnReload', 'r');
         setupTouchButton('btnAttack', 'click');
+
+        const btnReload = document.getElementById('btnReload');
+        if (btnReload) {
+            btnReload.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                triggerReload(p1);
+            }, { passive: false });
+            btnReload.addEventListener('click', () => {
+                triggerReload(p1);
+            });
+        }
 
         // ============================================================
         //  MENU FUNCTIONS
@@ -2478,7 +2520,8 @@
                         x: wp.x,
                         y: wp.y,
                         info: wp.info,
-                        isGrounded: wp.isGrounded
+                        isGrounded: wp.isGrounded,
+                        spawnTime: wp.spawnTime || Date.now()
                     };
                 }
             }
@@ -2512,9 +2555,10 @@
             if (!wp.info && WEAPON_TYPES[wp.weaponTypeId]) {
                 wp.info = WEAPON_TYPES[wp.weaponTypeId];
             } else if (!wp.info) {
-                wp.info = { id: 'sword', name: 'Kiếm', color: '#ffffff', dmg: 10, range: 45, type: 'melee' };
+                wp.info = { id: 'sword', name: 'Kiếm Laser', color: '#00d2d3', dmg: 10, range: 50, type: 'melee' };
             }
             wp.age = 0;
+            wp.spawnTime = wp.spawnTime || Date.now();
             clientWeapons[wp.id] = wp;
         });
 
@@ -2534,6 +2578,8 @@
                 p1.weapon = finalizedInfo;
                 p1.weaponAge = 0;
                 p1.ammo = finalizedInfo ? (finalizedInfo.maxAmmo || 10) : 0;
+                p1.isReloading = false;
+                p1.reloadTimer = 0;
                 updateWeaponHint(finalizedInfo);
                 if (onlinePlayers[myId]) onlinePlayers[myId].weapon = finalizedInfo;
             } else if (onlinePlayers[playerId]) {
@@ -2568,12 +2614,27 @@
             hitEffects.push(new HitExplosion(data.x, data.y, '💥 NỔ!'));
             shakeTimer = 12;
 
+            // Kích vật lý đẩy tất cả người chơi gần tâm nổ trong online
+            const explosionRadius = 120;
             if (p1 && p1.hp > 0) {
                 let dist = Math.hypot((p1.x + 15) - data.x, (p1.y + 40) - data.y);
-                if (dist < 120) {
+                if (dist < explosionRadius) {
                     let pushDir = (p1.x + 15) >= data.x ? 1 : -1;
-                    p1.vx += pushDir * (120 - dist) * 0.12;
-                    p1.vy -= (120 - dist) * 0.08;
+                    let force = (explosionRadius - dist) / explosionRadius;
+                    p1.vx += pushDir * force * 15;
+                    p1.vy -= force * 10;
+                }
+            }
+            // Đẩy người chơi khác (hiển thị local, server xử lý sát thương thật)
+            for (let id in onlinePlayers) {
+                if (id === myId) continue;
+                let op = onlinePlayers[id];
+                if (!op || op.hp <= 0) continue;
+                let dist = Math.hypot((op.x + 15) - data.x, (op.y + 40) - data.y);
+                if (dist < explosionRadius) {
+                    let pushDir = (op.x + 15) >= data.x ? 1 : -1;
+                    let force = (explosionRadius - dist) / explosionRadius;
+                    op.x += pushDir * force * 12;
                 }
             }
 
@@ -2626,6 +2687,7 @@
             hitEffects = [];
             bullets = [];
             grenades = [];
+            shells = [];
             clientWeapons = {};
             shakeTimer = 0;
             cameraX = 0;
@@ -2963,7 +3025,7 @@
                                     if (!target || target.hp <= 0) continue;
 
                                     let targetCenterX = target.x + 15;
-                                    let targetCenterY = target.y + 40;
+                                    let targetCenterY = target.isProne ? GROUND_Y - 17 : target.y + 40;
 
                                     if (targetCenterX >= box.x && targetCenterX <= box.x + box.width &&
                                         targetCenterY >= box.y && targetCenterY <= box.y + box.height) {
@@ -3146,9 +3208,9 @@
 
                             let remainMs = 15000 - (wp.spawnTime ? (Date.now() - wp.spawnTime) : ((wp.age || 0) * 16.67));
                             let remainSecs = Math.max(0, Math.ceil(remainMs / 1000));
-                            if (remainSecs <= 5) {
-                                ctx.fillStyle = `rgba(255, 50, 50, ${0.5 + Math.sin(Date.now() / 150) * 0.4})`;
-                                ctx.font = '9px monospace';
+                            if (remainSecs <= 15) {
+                                ctx.fillStyle = remainSecs <= 5 ? `rgba(255, 50, 50, ${0.5 + Math.sin(Date.now() / 150) * 0.4})` : 'rgba(255, 255, 255, 0.8)';
+                                ctx.font = 'bold 10px monospace';
                                 ctx.fillText(`${remainSecs}s`, dx, wp.y - h / 2 - 6);
                             }
                             ctx.restore();
@@ -3226,12 +3288,25 @@
                                 ctx.strokeStyle = '#2ecc71';
                                 ctx.lineWidth = 2.5;
                                 ctx.beginPath();
-                                ctx.arc(drawX + 15, barY - 15, 7, -Math.PI / 2, Math.PI * 1.5);
+                                let maxRt = (op.weapon && op.weapon.reloadTime) ? op.weapon.reloadTime : 90;
+                                let relRatio = 1 - ((op.reloadTimer || 0) / maxRt);
+                                ctx.arc(drawX + 15, barY - 15, 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * relRatio);
                                 ctx.stroke();
                                 ctx.fillStyle = '#fff';
                                 ctx.font = 'bold 8px sans-serif';
                                 ctx.textAlign = 'center';
                                 ctx.fillText('RELOAD', drawX + 15, barY - 25);
+                                ctx.restore();
+                            }
+
+                            // Vòng xoay hồi chiêu màu cam trên đầu đối thủ Online khi đang đòn đánh
+                            if (op.isAttacking) {
+                                ctx.save();
+                                ctx.strokeStyle = 'rgba(255, 170, 0, 0.9)';
+                                ctx.lineWidth = 3;
+                                ctx.beginPath();
+                                ctx.arc(drawX + 15, barY - 12, 7, -Math.PI / 2, Math.PI * 1.5);
+                                ctx.stroke();
                                 ctx.restore();
                             }
 
@@ -3297,6 +3372,18 @@
                                         ctx.beginPath(); ctx.moveTo(wX, wY); ctx.lineTo(wX + 35 * facing, wY); ctx.stroke();
                                     } else if (op.weapon.id === 'nade') {
                                         ctx.beginPath(); ctx.arc(wX, wY, 6, 0, Math.PI * 2); ctx.fill();
+                                    }
+
+                                    if (op.muzzleFlashTimer > 0) {
+                                        op.muzzleFlashTimer--;
+                                        ctx.save();
+                                        ctx.shadowColor = '#ffbe76';
+                                        ctx.shadowBlur = 15;
+                                        ctx.fillStyle = '#fff';
+                                        ctx.beginPath();
+                                        ctx.arc(wX + 24 * facing, wY, 6, 0, Math.PI * 2);
+                                        ctx.fill();
+                                        ctx.restore();
                                     }
                                     ctx.restore();
                                 }
@@ -3456,7 +3543,11 @@
                     if (gameMode !== 'online') {
                         let wp1 = p1 && p1.weapon ? p1.weapon.name : 'Đấm tay';
                         if (p1 && p1.weapon && p1.weapon.type === 'gun') {
-                            wp1 += ` (🟡 ${p1.ammo}/10)`;
+                            if (p1.isReloading) {
+                                wp1 += ` (🔄 Nạp đạn...)`;
+                            } else {
+                                wp1 += ` (🟡 ${p1.ammo}/${p1.weapon.maxAmmo || 10})`;
+                            }
                         } else if (p1 && p1.weapon && p1.weapon.type !== 'gun') {
                             let secsLeft = Math.ceil((600 - p1.weaponAge) / 60);
                             wp1 += ` (⏱ ${secsLeft}s)`;
@@ -3464,7 +3555,11 @@
 
                         let wp2 = p2 && p2.weapon ? p2.weapon.name : 'Đấm tay';
                         if (p2 && p2.weapon && p2.weapon.type === 'gun') {
-                            wp2 += ` (🟡 ${p2.ammo}/10)`;
+                            if (p2.isReloading) {
+                                wp2 += ` (🔄 Nạp đạn...)`;
+                            } else {
+                                wp2 += ` (🟡 ${p2.ammo}/${p2.weapon.maxAmmo || 10})`;
+                            }
                         } else if (p2 && p2.weapon && p2.weapon.type !== 'gun') {
                             let secsLeft = Math.ceil((600 - p2.weaponAge) / 60);
                             wp2 += ` (⏱ ${secsLeft}s)`;
@@ -3482,7 +3577,7 @@
 
                         ctx.fillStyle = '#aaaaaa';
                         ctx.font = 'italic 9px sans-serif';
-                        ctx.fillText(`Súng hết 10 viên thì mất | Vũ khí cận chiến mất sau 10s`, 20, 68);
+                        ctx.fillText(`Súng hết đạn nhấn R để nạp | Vũ khí cận chiến mất sau 10s`, 20, 68);
                     } else {
                         let yOffset = 28;
                         let pKeys = Object.keys(onlinePlayers);
@@ -3497,7 +3592,13 @@
 
                             if (currentWp && currentWp.type === 'gun') {
                                 let ammoCount = (isMe && p1 && p1.weapon) ? p1.ammo : (op.ammo !== undefined ? op.ammo : 10);
-                                wpName += ` (🟡 ${ammoCount}/10)`;
+                                let maxAmmo = currentWp.maxAmmo || 10;
+                                let isRld = (isMe && p1) ? p1.isReloading : op.isReloading;
+                                if (isRld) {
+                                    wpName += ` (🔄 Nạp...)`;
+                                } else {
+                                    wpName += ` (🟡 ${ammoCount}/${maxAmmo})`;
+                                }
                             } else if (currentWp && currentWp.type !== 'gun') {
                                 let age = (isMe && p1 && p1.weapon) ? p1.weaponAge : (op.weaponAge || 0);
                                 let secsLeft = Math.max(0, Math.ceil((600 - age) / 60));
