@@ -43,6 +43,8 @@ let roomWeapons = {};
 let roomBullets = {};  // Quản lý đạn bay: { [roomId]: [ { x, y, vx, vy, color, damage, attackerId } ] }
 let roomGrenades = {}; // Quản lý lựu đạn: { [roomId]: [ { x, y, vx, vy, timer, color, damage, attackerId } ] }
 let disconnectTimers = {}; // Quản lý grace period 15s cho người chơi tạm mất kết nối
+let roomRematchVotes = {}; // Lưu số phiếu chơi lại của từng phòng: { [roomId]: Set<playerId> }
+let roomMaxPlayers = {}; // Lưu số người chơi tối đa của phòng để biết cần bao nhiêu phiếu rematch
 
 io.on('connection', (socket) => {
     console.log(`🔌 [Server Log] Người chơi kết nối thành công: ${socket.id} (Thời điểm: ${new Date().toLocaleTimeString()})`);
@@ -100,6 +102,8 @@ io.on('connection', (socket) => {
                 roomWeapons[roomId] = {};
                 roomBullets[roomId] = [];
                 roomGrenades[roomId] = [];
+                roomRematchVotes[roomId] = new Set();
+                roomMaxPlayers[roomId] = maxPlayers;
 
                 playersInRoom.forEach((p, index) => {
                     p.join(roomId);
@@ -224,24 +228,44 @@ io.on('connection', (socket) => {
     // CHỦ ĐỘNG THOÁT TRẬN (TỪ NÚT 3 VẠCH HOẶC NÚT THOÁT)
     socket.on('leaveMatch', () => {
         if (socket.currentRoom) {
+            const roomId = socket.currentRoom;
             console.log(`🏃 [Server Log] Người chơi ${socket.id} đã chủ động thoát khỏi trận!`);
-            socket.to(socket.currentRoom).emit('playerLeft', { id: socket.id });
-            
-            if (roomPlayers[socket.currentRoom]) {
-                delete roomPlayers[socket.currentRoom][socket.id];
-                checkMatchOver(socket.currentRoom);
-                
-                // Nếu phòng không còn ai, dọn dẹp bộ nhớ phòng đó luôn
-                if (Object.keys(roomPlayers[socket.currentRoom]).length === 0) {
-                    delete roomPlayers[socket.currentRoom];
-                    delete roomWeapons[socket.currentRoom];
-                    delete roomBullets[socket.currentRoom];
-                    delete roomGrenades[socket.currentRoom];
+
+            // Trước khi xóa, kiểm tra còn ai sống không và thông báo thắng cho người còn lại
+            if (roomPlayers[roomId]) {
+                delete roomPlayers[roomId][socket.id];
+
+                const remainingIds = Object.keys(roomPlayers[roomId]);
+                if (remainingIds.length >= 1) {
+                    // Thông báo người chơi đã thoát
+                    socket.to(roomId).emit('playerLeft', { id: socket.id });
+
+                    // Nếu chỉ còn 1 người → người đó thắng do đối thủ bỏ cuộc
+                    if (remainingIds.length === 1) {
+                        const winnerId = remainingIds[0];
+                        io.to(roomId).emit('matchOver', {
+                            winnerText: '🏆 CHIẾN THẮNG! Đối thủ đã bỏ cuộc.',
+                            color: '#2ecc71',
+                            winnerId: winnerId,
+                            opponentLeft: true
+                        });
+                        console.log(`🏆 [Server Log] Người chơi ${winnerId} thắng vì đối thủ rời phòng (roomId: ${roomId})`);
+                    }
+                }
+
+                // Nếu phòng trống, dọn dẹp
+                if (Object.keys(roomPlayers[roomId]).length === 0) {
+                    delete roomPlayers[roomId];
+                    delete roomWeapons[roomId];
+                    delete roomBullets[roomId];
+                    delete roomGrenades[roomId];
+                    delete roomRematchVotes[roomId];
+                    delete roomMaxPlayers[roomId];
                 }
             }
 
-            socket.leave(socket.currentRoom);
-            socket.currentRoom = null; 
+            socket.leave(roomId);
+            socket.currentRoom = null;
         }
     });
 
@@ -394,6 +418,66 @@ io.on('connection', (socket) => {
         }
     });
 
+    // YÊU CẦU CHƠI LẠI (ONLINE REMATCH)
+    socket.on('requestRematch', () => {
+        const roomId = socket.currentRoom;
+        if (!roomId) return;
+
+        // Khởi tạo tập vote nếu chưa có
+        if (!roomRematchVotes[roomId]) roomRematchVotes[roomId] = new Set();
+        roomRematchVotes[roomId].add(socket.id);
+
+        const totalInRoom = roomPlayers[roomId] ? Object.keys(roomPlayers[roomId]).length : 0;
+        const votes = roomRematchVotes[roomId].size;
+
+        console.log(`🔄 [Server Log] Phòng ${roomId}: ${votes}/${totalInRoom} người muốn chơi lại.`);
+
+        // Thông báo cho cả phòng biết ai đã sẵn sàng
+        io.to(roomId).emit('rematchVoteUpdate', {
+            voterId: socket.id,
+            votes: votes,
+            total: totalInRoom
+        });
+
+        // Nếu tất cả đã sẵn sàng → bắt đầu lại trận đấu
+        if (votes >= totalInRoom && totalInRoom >= 2) {
+            console.log(`🎬 [Server Log] Tất cả sẵn sàng! Bắt đầu lại trận phòng ${roomId}.`);
+            roomRematchVotes[roomId].clear();
+
+            // Reset lại trạng thái phòng
+            const playerIds = Object.keys(roomPlayers[roomId]);
+            const playersConfig = {};
+
+            roomBullets[roomId] = [];
+            roomGrenades[roomId] = [];
+            roomWeapons[roomId] = {};
+
+            playerIds.forEach((pid, index) => {
+                const startX = 150 + index * 200;
+                const startY = 270;
+                roomPlayers[roomId][pid].x = startX;
+                roomPlayers[roomId][pid].y = startY;
+                roomPlayers[roomId][pid].hp = 100;
+                roomPlayers[roomId][pid].weapon = null;
+                roomPlayers[roomId][pid].shootCooldown = 0;
+
+                playersConfig[pid] = {
+                    x: startX,
+                    y: startY,
+                    hp: 100,
+                    color: roomPlayers[roomId][pid].color || `hsl(${(index * 360 / playerIds.length)}, 70%, 50%)`,
+                    facing: 1,
+                    weapon: null
+                };
+            });
+
+            io.to(roomId).emit('rematchStart', {
+                roomId: roomId,
+                players: playersConfig
+            });
+        }
+    });
+
     // MẤT KẾT NỐI (VỚI GRACE PERIOD 15 GIÂY)
     socket.on('disconnect', (reason) => {
         console.warn(`❌ [Server Log] Người chơi ngắt kết nối: ${socket.id} (Lý do: ${reason || 'N/A'}) - Thời điểm: ${new Date().toLocaleTimeString()}`);
@@ -441,23 +525,28 @@ function checkMatchOver(roomId) {
     if (playerIds.length > 1 && alivePlayers.length <= 1) {
         let winnerText = "TRẬN ĐẤU HOÀ!";
         let winnerColor = "#ffffff";
+        let winnerId = null;
 
         if (alivePlayers.length === 1) {
             winnerText = `NGƯỜI CHƠI SỐNG SÓT CHIẾN THẮNG!`;
             winnerColor = "#2ecc71";
+            winnerId = alivePlayers[0];
         }
 
         io.to(roomId).emit('matchOver', {
             winnerText: winnerText,
-            color: winnerColor
+            color: winnerColor,
+            winnerId: winnerId
         });
 
-        // Giải tán dữ liệu phòng sau khi trận đấu kết thúc
+        // Reset rematch votes khi trận mới kết thúc
+        if (roomRematchVotes[roomId]) roomRematchVotes[roomId].clear();
+
+        // Giải tán dữ liệu đạn/lựu đạn nhưng GIỮ NGUYÊN roomPlayers để rematch hoạt động
         setTimeout(() => {
-            delete roomPlayers[roomId];
-            delete roomWeapons[roomId];
-            delete roomBullets[roomId];
-            delete roomGrenades[roomId];
+            if (roomBullets[roomId]) roomBullets[roomId] = [];
+            if (roomGrenades[roomId]) roomGrenades[roomId] = [];
+            if (roomWeapons[roomId]) roomWeapons[roomId] = {};
         }, 3000);
     }
 }

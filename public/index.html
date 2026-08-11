@@ -284,19 +284,54 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.82);
             justify-content: center;
             align-items: center;
             flex-direction: column;
             z-index: 5;
+            backdrop-filter: blur(4px);
         }
         #winnerText {
-            font-size: 24px;
+            font-size: 26px;
             font-weight: bold;
-            margin-bottom: 25px;
+            margin-bottom: 10px;
             text-align: center;
-            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-            padding: 0 10px;
+            text-shadow: 0 0 18px rgba(255, 255, 255, 0.5);
+            padding: 0 16px;
+            line-height: 1.4;
+        }
+        #subWinnerText {
+            font-size: 14px;
+            color: rgba(255,255,255,0.65);
+            margin-bottom: 22px;
+            text-align: center;
+        }
+        #rematchStatus {
+            font-size: 14px;
+            color: #f1c40f;
+            margin-bottom: 12px;
+            text-align: center;
+            min-height: 20px;
+        }
+        #rematchBtn {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: #fff;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 8px;
+            transition: opacity 0.2s, transform 0.2s;
+            width: 200px;
+        }
+        #rematchBtn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        #rematchBtn:not(:disabled):hover {
+            transform: scale(1.04);
         }
         /* === IN-GAME MENU === */
         #inGameMenuBtn {
@@ -487,8 +522,11 @@
 
             <div id="gameOverOverlay">
                 <div id="winnerText">🏆 MÁY ĐÃ CHIẾN THẮNG!</div>
-                <div>
+                <div id="subWinnerText"></div>
+                <div id="rematchStatus"></div>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
                     <button id="restartBtn" class="btn-restart" onclick="restartGame()">🔄 CHƠI LẠI</button>
+                    <button id="rematchBtn" style="display:none;" onclick="requestOnlineRematch()">🔄 CHƠI LẠI (CẦN 2 NGƯỜI SẴN SÀNG)</button>
                     <button class="btn-menu" onclick="resetToMenu(true)">🏠 QUAY VỀ MENU</button>
                 </div>
             </div>
@@ -2432,23 +2470,119 @@
             }
         });
 
+        // ============================================================
+        //  HE THONG REMATCH ONLINE
+        // ============================================================
+        let myRematchVoted = false;
+
+        function requestOnlineRematch() {
+            if (myRematchVoted) return;
+            myRematchVoted = true;
+            let btn = document.getElementById('rematchBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ Đang chờ người chơi kia...';
+            }
+            socket.emit('requestRematch');
+        }
+
+        socket.on('rematchVoteUpdate', (data) => {
+            let status = document.getElementById('rematchStatus');
+            if (status) {
+                status.textContent = `⏳ ${data.votes}/${data.total} người chơi đã sẵn sàng chơi lại...`;
+            }
+        });
+
+        socket.on('rematchStart', (data) => {
+            // Reset trạng thái client cho trận mới
+            myRematchVoted = false;
+            isGameOver = false;
+            winner = null;
+            fireworks = [];
+            hitEffects = [];
+            bullets = [];
+            grenades = [];
+            clientWeapons = {};
+            shakeTimer = 0;
+            cameraX = 0;
+            canvas.style.transform = 'translate(0px, 0px)';
+
+            // Ẩn overlay game over
+            document.getElementById('gameOverOverlay').style.display = 'none';
+            document.getElementById('inGameMenuPopup').style.display = 'none';
+
+            // Cập nhật lại dữ liệu người chơi
+            if (data.players) {
+                const playerIds = Object.keys(data.players);
+                onlinePlayers = {};
+                playerIds.forEach((id, index) => {
+                    let pConf = data.players[id];
+                    let p1Name = document.getElementById('p1NameInput') ? document.getElementById('p1NameInput').value.trim() : 'Bạn';
+                    onlinePlayers[id] = {
+                        id: id,
+                        x: pConf.x,
+                        y: pConf.y,
+                        color: pConf.color || ONLINE_COLORS[index % ONLINE_COLORS.length],
+                        hp: pConf.hp || 100,
+                        facing: pConf.facing || 1,
+                        isAttacking: false,
+                        weapon: null,
+                        weaponAge: 0,
+                        label: id === myId ? p1Name : `P${index + 1}`
+                    };
+                });
+
+                if (data.players[myId]) {
+                    let myConf = data.players[myId];
+                    p1.reset(myConf.x, myConf.y, myConf.facing || 1);
+                    p1.hp = 100;
+                    p1.weapon = null;
+                    p1.ammo = 0;
+                    p1.isReloading = false;
+                    p1.reloadTimer = 0;
+                    p1.color = myConf.color || '#3498db';
+                    updateWeaponHint(null);
+                }
+            }
+
+            console.log('🔄 [Client] Rematch bắt đầu!');
+        });
+
         socket.on("matchOver", (data) => {
             isGameOver = true;
             let overlay = document.getElementById("gameOverOverlay");
             let wTxt = document.getElementById("winnerText");
+            let sub = document.getElementById("subWinnerText");
+            let rematchStatus = document.getElementById("rematchStatus");
+
+            // Ẩn nút chơi lại offline, hiện nút chơi lại online
             document.getElementById("restartBtn").style.display = "none";
+            let rematchBtn = document.getElementById("rematchBtn");
+            rematchBtn.style.display = "inline-block";
+            rematchBtn.disabled = false;
+            rematchBtn.textContent = '🔄 CHƠI LẠI (CẦN 2 NGƯỜI SẴN SÀNG)';
+            myRematchVoted = false;
+
+            if (rematchStatus) rematchStatus.textContent = '';
 
             let meAlive = p1.hp > 0;
-            if (meAlive) {
-                wTxt.innerText = "🏆 BẠN ĐÃ CHIẾN THẮNG TRẬN ĐẤU!";
+            if (data && data.opponentLeft) {
+                // Đối thủ bỏ cuộc
+                wTxt.innerText = "🏆 BẠN ĐÃ CHIẾN THẮNG!";
                 wTxt.style.color = "#2ecc71";
+                if (sub) sub.textContent = '⚠️ Đối thủ đã rời khỏi trận đấu.';
+            } else if (meAlive) {
+                wTxt.innerText = "🏆 BẠN ĐÃ CHIẾN THẮNG!";
+                wTxt.style.color = "#2ecc71";
+                if (sub) sub.textContent = 'Xuất sắc! Bạn là người sống sót cuối cùng.';
             } else {
-                wTxt.innerText = (data && data.winnerText) ? data.winnerText : "💀 BẠN ĐÃ THUA CUỘC!";
-                wTxt.style.color = (data && data.color) ? data.color : "#e74c3c";
+                wTxt.innerText = (data && data.winnerText) ? '💀 BẠN ĐÃ THUA!' : '💀 BẠN ĐÃ THUA!';
+                wTxt.style.color = "#e74c3c";
+                if (sub) sub.textContent = (data && data.winnerText) ? data.winnerText : 'Cố lên lần sau!';
             }
             overlay.style.display = "flex";
 
-            if (meAlive) {
+            if (meAlive && !(data && data.opponentLeft)) {
                 for (let i = 0; i < 50; i++) {
                     let colors = ["#ff3838", "#ff9f43", "#4cd137", "#00a8ff", "#9c88ff", "#f5cd79"];
                     fireworks.push(new Particle(
@@ -2465,6 +2599,7 @@
                 hitEffects.push(new HitExplosion(onlinePlayers[data.id].x + 15, onlinePlayers[data.id].y, '❌ RỜI PHÒNG', '#e74c3c'));
                 delete onlinePlayers[data.id];
             }
+            // Nếu đang trong trận và chỉ còn mình (server sẽ emit matchOver), không cần làm gì thêm
         });
 
         // ============================================================
@@ -2492,11 +2627,19 @@
         }
 
         function endGameOffline(winnerMessage) {
+            isGameOver = true;
             let overlay = document.getElementById("gameOverOverlay");
             let wTxt = document.getElementById("winnerText");
+            let sub = document.getElementById("subWinnerText");
+            let rematchStatus = document.getElementById("rematchStatus");
+            let rematchBtn = document.getElementById("rematchBtn");
+
             document.getElementById("restartBtn").style.display = "inline-block";
+            document.getElementById("rematchBtn").style.display = "none";
             wTxt.innerText = winnerMessage;
             wTxt.style.color = "#fff";
+            if (sub) sub.textContent = '';
+            if (rematchStatus) rematchStatus.textContent = '';
             overlay.style.display = "flex";
         }
 
