@@ -863,10 +863,27 @@
         // ============================================================
 
 
-        // TỔNG HỢP ÂM THANH QUA WEB AUDIO API
+        // TỔNG HỢP ÂM THANH QUA WEB AUDIO API (TỐI ƯU AUDIO CONTEXT DÙNG CHUNG)
+        let globalAudioCtx = null;
+        function getAudioContext() {
+            try {
+                if (!globalAudioCtx) {
+                    let AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtxClass) {
+                        globalAudioCtx = new AudioCtxClass();
+                    }
+                }
+                if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+                    globalAudioCtx.resume();
+                }
+            } catch(e) {}
+            return globalAudioCtx;
+        }
+
         function playSoundPistol() {
             try {
-                let ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+                let ctxAudio = getAudioContext();
+                if (!ctxAudio) return;
                 let now = ctxAudio.currentTime;
                 let bufferSize = ctxAudio.sampleRate * 0.12;
                 let buffer = ctxAudio.createBuffer(1, bufferSize, ctxAudio.sampleRate);
@@ -894,7 +911,8 @@
 
         function playSoundAK() {
             try {
-                let ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+                let ctxAudio = getAudioContext();
+                if (!ctxAudio) return;
                 let now = ctxAudio.currentTime;
                 let bufferSize = ctxAudio.sampleRate * 0.18;
                 let buffer = ctxAudio.createBuffer(1, bufferSize, ctxAudio.sampleRate);
@@ -922,7 +940,8 @@
 
         function playSoundShotgun() {
             try {
-                let ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+                let ctxAudio = getAudioContext();
+                if (!ctxAudio) return;
                 let now = ctxAudio.currentTime;
                 let bufferSize = ctxAudio.sampleRate * 0.35; 
                 let buffer = ctxAudio.createBuffer(1, bufferSize, ctxAudio.sampleRate);
@@ -962,7 +981,8 @@
 
         function playSoundSniper() {
             try {
-                let ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+                let ctxAudio = getAudioContext();
+                if (!ctxAudio) return;
                 let now = ctxAudio.currentTime;
                 let bufferSize = ctxAudio.sampleRate * 0.6;
                 let buffer = ctxAudio.createBuffer(1, bufferSize, ctxAudio.sampleRate);
@@ -1003,7 +1023,8 @@
 
         function playSoundReload() {
             try {
-                let ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+                let ctxAudio = getAudioContext();
+                if (!ctxAudio) return;
                 let now = ctxAudio.currentTime;
                 
                 let osc1 = ctxAudio.createOscillator();
@@ -1130,6 +1151,7 @@
                 }
 
                 if (gameMode === 'online') {
+                    // Online mode: handlePlayer() đã được gọi từ ngoài, chỉ áp dụng vật lý
                     this.x += this.vx;
                 } else if (this.isAI) {
                     this.handleAI(opponent);
@@ -1275,64 +1297,86 @@
                 let spawnX = (this.x + this.width / 2) + Math.cos(angle) * spawnDist;
                 let spawnY = (this.isProne ? GROUND_Y - 15 : this.y + 25) + Math.sin(angle) * spawnDist;
 
-                // Delay đúng 1 giây (60 frame @ 60 FPS)
-                let cooldownBase = 60;
+                // Thời gian hồi đòn đánh (Cooldown): Đòn đánh thường đấm tay giảm từ 60 frame (1s) xuống 15 frame (~0.25s)
+                let cooldownBase = 15;
 
                 if (weapon) {
                     if (weapon.type === 'gun') {
-                        this.ammo--;
-                        this.muzzleFlashTimer = 4;
-                        shells.push(new Shell(this.x + this.width / 2, spawnY, this.facing));
+                        if (gameMode !== 'online') {
+                            // Chế độ offline: tạo đạn local
+                            this.ammo--;
+                            this.muzzleFlashTimer = 4;
+                            shells.push(new Shell(this.x + this.width / 2, spawnY, this.facing));
 
-                        let dmg = weapon.dmg;
-                        let bulletColor = weapon.color || '#ffdd57';
+                            let dmg = weapon.dmg;
+                            let bulletColor = weapon.color || '#ffdd57';
 
-                        if (weapon.id === 'pistol') {
-                            let b = new Bullet(spawnX, spawnY, angle, dmg, this, bulletColor, 22);
-                            bullets.push(b);
-                            shakeTimer = 1.8;
-                            this.x -= Math.cos(angle) * 1.5;
-                            playSoundPistol();
-                        } else if (weapon.id === 'ak47') {
-                            let b = new Bullet(spawnX, spawnY, angle + (Math.random() - 0.5) * 0.05, dmg, this, bulletColor, 24);
-                            if (!this.isGrounded) b.vy += (Math.random() - 0.5) * 1.5;
-                            bullets.push(b);
-                            shakeTimer = 3.5;
-                            this.x -= Math.cos(angle) * 2.0;
-                            playSoundAK();
-                        } else if (weapon.id === 'shotgun') {
-                            for (let i = 0; i < 5; i++) {
-                                let spreadAngle = angle + (i - 2) * 0.1;
-                                let b = new Bullet(spawnX, spawnY, spreadAngle, dmg, this, bulletColor, 18);
-                                b.life = 35;
-                                b.radius = 4;
+                            if (weapon.id === 'pistol') {
+                                let b = new Bullet(spawnX, spawnY, angle, dmg, this, bulletColor, 22);
                                 bullets.push(b);
+                                shakeTimer = 1.8;
+                                this.x -= Math.cos(angle) * 1.5;
+                                playSoundPistol();
+                                cooldownBase = 16;
+                            } else if (weapon.id === 'ak47') {
+                                let b = new Bullet(spawnX, spawnY, angle + (Math.random() - 0.5) * 0.05, dmg, this, bulletColor, 24);
+                                if (!this.isGrounded) b.vy += (Math.random() - 0.5) * 1.5;
+                                bullets.push(b);
+                                shakeTimer = 3.5;
+                                this.x -= Math.cos(angle) * 2.0;
+                                playSoundAK();
+                                cooldownBase = 10;
+                            } else if (weapon.id === 'shotgun') {
+                                for (let i = 0; i < 5; i++) {
+                                    let spreadAngle = angle + (i - 2) * 0.1;
+                                    let b = new Bullet(spawnX, spawnY, spreadAngle, dmg, this, bulletColor, 18);
+                                    b.life = 35;
+                                    b.radius = 4;
+                                    bullets.push(b);
+                                }
+                                shakeTimer = 8;
+                                this.x -= Math.cos(angle) * 6.5;
+                                playSoundShotgun();
+                                cooldownBase = 35;
+                            } else if (weapon.id === 'sniper') {
+                                let b = new Bullet(spawnX, spawnY, angle, dmg, this, bulletColor, 38);
+                                b.radius = 3;
+                                bullets.push(b);
+                                shakeTimer = 12;
+                                this.x -= Math.cos(angle) * 9.5;
+                                playSoundSniper();
+                                cooldownBase = 55;
                             }
-                            shakeTimer = 8;
-                            this.x -= Math.cos(angle) * 6.5;
-                            playSoundShotgun();
-                        } else if (weapon.id === 'sniper') {
-                            let b = new Bullet(spawnX, spawnY, angle, dmg, this, bulletColor, 38);
-                            b.radius = 3;
-                            bullets.push(b);
-                            shakeTimer = 12;
-                            this.x -= Math.cos(angle) * 9.5;
-                            playSoundSniper();
+                        } else {
+                            // Chế độ online: server tạo đạn, chỉ phát âm thanh và hiệu ứng visual
+                            this.muzzleFlashTimer = 4;
+                            shells.push(new Shell(this.x + this.width / 2, spawnY, this.facing));
+                            if (weapon.id === 'pistol') { playSoundPistol(); cooldownBase = 16; shakeTimer = 1.8; }
+                            else if (weapon.id === 'ak47') { playSoundAK(); cooldownBase = 10; shakeTimer = 3.5; }
+                            else if (weapon.id === 'shotgun') { playSoundShotgun(); cooldownBase = 35; shakeTimer = 8; }
+                            else if (weapon.id === 'sniper') { playSoundSniper(); cooldownBase = 55; shakeTimer = 12; }
                         }
                     } else if (weapon.type === 'grenade') {
-                        let g = new Grenade(spawnX, spawnY, angle, this);
-                        grenades.push(g);
+                        if (gameMode !== 'online') {
+                            let g = new Grenade(spawnX, spawnY, angle, this);
+                            grenades.push(g);
+                        }
+                        // Online: server xử lý lựu đạn, nhận về qua weaponUsedUp
                         this.weapon = null;
                         this.weaponAge = 0;
                         updateWeaponHint(null);
+                        cooldownBase = 30;
+                    } else if (weapon.type === 'melee') {
+                        cooldownBase = 18;
                     }
                 }
 
+                this.maxCooldown = cooldownBase;
                 this.attackCooldown = cooldownBase;
                 this.attackCooldownTimer = cooldownBase;
                 setTimeout(() => {
                     this.isAttacking = false;
-                }, 200);
+                }, 150);
             }
             draw() {
                 if (this.hp <= 0) return;
@@ -1353,9 +1397,9 @@
                 ctx.fillStyle = this.color;
                 ctx.fillRect(drawX - 5, barY, (Math.max(0, this.hp) / 100) * 40, 6);
 
-                // Vòng Delay 1 giây trên đầu
+                // Vòng xoay hiển thị hồi chiêu trên đầu nhân vật
                 if (this.attackCooldown > 0) {
-                    let cdRatio = this.attackCooldown / 60;
+                    let cdRatio = this.attackCooldown / (this.maxCooldown || 15);
                     ctx.save();
                     ctx.strokeStyle = 'rgba(255, 170, 0, 0.9)';
                     ctx.lineWidth = 3;
@@ -1919,7 +1963,7 @@
 
         function quitMatch() {
             if (gameMode === 'online') {
-                socket.emit("leaveRoom", { roomId: onlineRoomId });
+                socket.emit("leaveMatch");
             }
             resetToMenu();
         }
@@ -1934,55 +1978,21 @@
             document.getElementById('gameCanvas').classList.add('hidden');
             document.querySelector('.controls').classList.add('hidden');
             document.getElementById('mobileControls').classList.add('hidden');
-            socket.emit("joinMatchmaking", { maxPlayers: maxPlayers });
+            socket.emit("findMatch", { maxPlayers: maxPlayers });
         }
 
         function cancelOnlineMatchmaking() {
-            socket.emit("cancelMatchmaking");
+            socket.emit("cancelFindMatch");
             resetToMenu();
         }
 
-        socket.on("weaponSpawned", (wp) => {
-            if (!wp) return;
-            if (!wp.info && WEAPON_TYPES[wp.weaponTypeId]) {
-                wp.info = WEAPON_TYPES[wp.weaponTypeId];
-            } else if (!wp.info) {
-                wp.info = { id: 'sword', name: 'Kiếm', color: '#ffffff', dmg: 10, range: 45, type: 'melee' };
-            }
-            wp.age = 0;
-            clientWeapons[wp.id] = wp;
-        });
-
-        socket.on("weaponMoved", (wp) => {
-            if (wp && clientWeapons[wp.id]) {
-                clientWeapons[wp.id].y = wp.y;
+        socket.on("queueUpdate", (data) => {
+            if (data && data.count !== undefined) {
+                document.getElementById("playerCountText").innerText = `Đang tìm người chơi: ${data.count}/${data.target}`;
             }
         });
 
-        socket.on("weaponPickedUp", ({ weaponId, playerId, weaponInfo }) => {
-            delete clientWeapons[weaponId];
-            let finalizedInfo = weaponInfo;
-            if (!finalizedInfo && weaponId) {
-                finalizedInfo = WEAPON_TYPES[weaponId.split('_')[0]] || WEAPON_TYPES['sword'];
-            }
-            if (playerId === myId) {
-                let me = onlinePlayers[myId];
-                if (me) {
-                    me.weapon = finalizedInfo;
-                    me.weaponAge = 0;
-                }
-                updateWeaponHint(finalizedInfo);
-            } else if (onlinePlayers[playerId]) {
-                onlinePlayers[playerId].weapon = finalizedInfo;
-                onlinePlayers[playerId].weaponAge = 0;
-            }
-        });
-
-        socket.on("matchmakingUpdate", (data) => {
-            document.getElementById("playerCountText").innerText = `Đang tìm người chơi: ${data.current}/${data.max}`;
-        });
-
-        socket.on("matchInit", (data) => {
+        socket.on("matchFound", (data) => {
             myId = data.myId;
             onlineRoomId = data.roomId;
             gameMode = 'online';
@@ -2002,47 +2012,187 @@
             document.querySelector('.controls').classList.remove('hidden');
             document.getElementById('mobileControls').classList.remove('hidden');
 
+            let p1Name = document.getElementById("p1NameInput") ? document.getElementById("p1NameInput").value.trim() : "";
+            if (!p1Name) p1Name = "Bạn";
+
             onlinePlayers = {};
-            data.players.forEach((p, index) => {
-                let color = ONLINE_COLORS[index % ONLINE_COLORS.length];
-                onlinePlayers[p.id] = {
-                    id: p.id,
-                    x: p.x,
-                    y: p.y,
-                    color: color,
-                    hp: p.hp,
-                    facing: p.facing,
+            const playerIds = Object.keys(data.players || {});
+            playerIds.forEach((id, index) => {
+                let pConf = data.players[id];
+                onlinePlayers[id] = {
+                    id: id,
+                    x: pConf.x,
+                    y: pConf.y,
+                    color: pConf.color || ONLINE_COLORS[index % ONLINE_COLORS.length],
+                    hp: pConf.hp || 100,
+                    facing: pConf.facing || 1,
                     isAttacking: false,
                     weapon: null,
-                    weaponAge: 0
+                    weaponAge: 0,
+                    label: id === myId ? p1Name : `P${index + 1}`
                 };
             });
+
+            if (data.players && data.players[myId]) {
+                let myConf = data.players[myId];
+                p1.reset(myConf.x, myConf.y, myConf.facing);
+                p1.color = myConf.color || "#3498db";
+                p1.name = p1Name;
+                p1.hp = 100;
+                p1.weapon = null;
+                p1.controls = { left: 'a', right: 'd', up: 'w', down: 's', attack: 'click' };
+            }
+
             document.getElementById("weaponHint").style.display = "block";
             updateWeaponHint(null);
         });
 
-        socket.on("playerStateUpdate", (playersState) => {
+        socket.on("opponentAction", (data) => {
             if (gameMode !== 'online') return;
-            for (let id in playersState) {
-                if (onlinePlayers[id]) {
-                    onlinePlayers[id].x = playersState[id].x;
-                    onlinePlayers[id].y = playersState[id].y;
-                    onlinePlayers[id].facing = playersState[id].facing;
-                    onlinePlayers[id].isAttacking = playersState[id].isAttacking;
-                    onlinePlayers[id].hp = playersState[id].hp;
-                    if (playersState[id].weapon) {
-                        onlinePlayers[id].weapon = playersState[id].weapon;
-                        onlinePlayers[id].weaponAge = playersState[id].weaponAge || 0;
-                    }
-                }
+            if (data && onlinePlayers[data.id]) {
+                let op = onlinePlayers[data.id];
+                op.x = data.x;
+                op.y = data.y;
+                op.vx = data.vx;
+                op.vy = data.vy;
+                op.facing = data.facing;
+                op.isAttacking = data.isAttacking;
+                op.hp = data.hp;
+                if (data.weapon !== undefined) op.weapon = data.weapon;
             }
         });
 
-        socket.on("spawnHitEffect", (data) => {
-            let dmgLabel = data.damage ? `-${data.damage} HP` : "-5 HP";
-            hitEffects.push(new HitExplosion(data.x, data.y, dmgLabel));
-            if (data.targetId === myId || data.attackerId === myId) {
+        socket.on("roomStateUpdate", (data) => {
+            if (gameMode !== 'online' || !data) return;
+
+            // Đồng bộ vị trí & HP đối thủ
+            if (data.players) {
+                for (let id in data.players) {
+                    let sp = data.players[id];
+                    if (id === myId) {
+                        p1.hp = sp.hp;
+                        if (onlinePlayers[myId]) onlinePlayers[myId].hp = sp.hp;
+                    } else if (onlinePlayers[id]) {
+                        onlinePlayers[id].x = sp.x;
+                        onlinePlayers[id].y = sp.y;
+                        onlinePlayers[id].hp = sp.hp;
+                    }
+                }
+            }
+
+            // Đồng bộ vũ khí rơi trên sàn
+            if (data.weapons) {
+                clientWeapons = {};
+                for (let wId in data.weapons) {
+                    let wp = data.weapons[wId];
+                    clientWeapons[wId] = {
+                        id: wp.id,
+                        x: wp.x,
+                        y: wp.y,
+                        info: wp.info,
+                        isGrounded: wp.isGrounded
+                    };
+                }
+            }
+
+            // Đồng bộ đạn bay
+            if (data.bullets) {
+                bullets = data.bullets.map(b => {
+                    let angle = Math.atan2(b.vy, b.vx);
+                    let speed = Math.hypot(b.vx, b.vy);
+                    let bulletObj = new Bullet(b.x, b.y, angle, b.damage, b.attackerId, b.color, speed);
+                    bulletObj.vx = b.vx;
+                    bulletObj.vy = b.vy;
+                    return bulletObj;
+                });
+            }
+
+            // Đồng bộ lựu đạn
+            if (data.grenades) {
+                grenades = data.grenades.map(g => {
+                    let gr = new Grenade(g.x, g.y, 0, g.attackerId);
+                    gr.vx = g.vx;
+                    gr.vy = g.vy;
+                    gr.timer = g.timer;
+                    return gr;
+                });
+            }
+        });
+
+        socket.on("weaponSpawned", (wp) => {
+            if (!wp) return;
+            if (!wp.info && WEAPON_TYPES[wp.weaponTypeId]) {
+                wp.info = WEAPON_TYPES[wp.weaponTypeId];
+            } else if (!wp.info) {
+                wp.info = { id: 'sword', name: 'Kiếm', color: '#ffffff', dmg: 10, range: 45, type: 'melee' };
+            }
+            wp.age = 0;
+            clientWeapons[wp.id] = wp;
+        });
+
+        socket.on("weaponExpired", ({ weaponId }) => {
+            if (weaponId && clientWeapons[weaponId]) {
+                delete clientWeapons[weaponId];
+            }
+        });
+
+        socket.on("weaponPickedUp", ({ weaponId, playerId, weaponInfo }) => {
+            delete clientWeapons[weaponId];
+            let finalizedInfo = weaponInfo;
+            if (!finalizedInfo && weaponId) {
+                finalizedInfo = WEAPON_TYPES[weaponId.split('_')[0]] || WEAPON_TYPES['sword'];
+            }
+            if (playerId === myId) {
+                p1.weapon = finalizedInfo;
+                p1.weaponAge = 0;
+                p1.ammo = finalizedInfo ? (finalizedInfo.maxAmmo || 10) : 0;
+                updateWeaponHint(finalizedInfo);
+                if (onlinePlayers[myId]) onlinePlayers[myId].weapon = finalizedInfo;
+            } else if (onlinePlayers[playerId]) {
+                onlinePlayers[playerId].weapon = finalizedInfo;
+                onlinePlayers[playerId].weaponAge = 0;
+            }
+        });
+
+        socket.on("weaponUsedUp", () => {
+            p1.weapon = null;
+            p1.weaponAge = 0;
+            updateWeaponHint(null);
+            if (onlinePlayers[myId]) onlinePlayers[myId].weapon = null;
+        });
+
+        socket.on("playerHit", (data) => {
+            if (!data) return;
+            let dmgText = data.damageText || "-5 HP";
+            hitEffects.push(new HitExplosion(data.x + 15, data.y + 20, dmgText));
+            
+            if (data.targetId === myId) {
+                p1.hp = data.hp;
+                if (onlinePlayers[myId]) onlinePlayers[myId].hp = data.hp;
                 shakeTimer = 8;
+            } else if (onlinePlayers[data.targetId]) {
+                onlinePlayers[data.targetId].hp = data.hp;
+            }
+        });
+
+        socket.on("grenadeExplode", (data) => {
+            if (!data) return;
+            hitEffects.push(new HitExplosion(data.x, data.y, '💥 NỔ!'));
+            shakeTimer = 12;
+            for (let i = 0; i < 40; i++) {
+                let angle = Math.random() * Math.PI * 2;
+                let speed = Math.random() * 8 + 3;
+                let colors = ['#ff6b6b', '#ff9f43', '#feca57', '#ff4757', '#ff6348'];
+                let p = new Particle(
+                    data.x + (Math.random() - 0.5) * 20,
+                    data.y + (Math.random() - 0.5) * 20,
+                    colors[Math.floor(Math.random() * colors.length)]
+                );
+                p.vx = Math.cos(angle) * speed;
+                p.vy = Math.sin(angle) * speed - 2;
+                p.radius = Math.random() * 5 + 2;
+                p.decay = 0.02 + Math.random() * 0.02;
+                fireworks.push(p);
             }
         });
 
@@ -2051,18 +2201,34 @@
             let overlay = document.getElementById("gameOverOverlay");
             let wTxt = document.getElementById("winnerText");
             document.getElementById("restartBtn").style.display = "none";
-            if (data.winnerId === myId) {
+
+            let meAlive = p1.hp > 0;
+            if (meAlive) {
                 wTxt.innerText = "🏆 BẠN ĐÃ CHIẾN THẮNG TRẬN ĐẤU!";
                 wTxt.style.color = "#2ecc71";
             } else {
-                wTxt.innerText = "💀 BẠN ĐÃ THUA CUỘC!";
-                wTxt.style.color = "#e74c3c";
+                wTxt.innerText = (data && data.winnerText) ? data.winnerText : "💀 BẠN ĐÃ THUA CUỘC!";
+                wTxt.style.color = (data && data.color) ? data.color : "#e74c3c";
             }
             overlay.style.display = "flex";
+
+            if (meAlive) {
+                for (let i = 0; i < 50; i++) {
+                    let colors = ["#ff3838", "#ff9f43", "#4cd137", "#00a8ff", "#9c88ff", "#f5cd79"];
+                    fireworks.push(new Particle(
+                        Math.random() * canvas.width + cameraX,
+                        Math.random() * (GROUND_Y - 80),
+                        colors[Math.floor(Math.random() * colors.length)]
+                    ));
+                }
+            }
         });
 
-        socket.on("playerDisconnected", (id) => {
-            if (onlinePlayers[id]) delete onlinePlayers[id];
+        socket.on("playerLeft", (data) => {
+            if (data && data.id && onlinePlayers[data.id]) {
+                hitEffects.push(new HitExplosion(onlinePlayers[data.id].x + 15, onlinePlayers[data.id].y, '❌ RỜI PHÒNG', '#e74c3c'));
+                delete onlinePlayers[data.id];
+            }
         });
 
         // ============================================================
@@ -2276,36 +2442,68 @@
 
             } else {
                 // === ONLINE MODE ===
-                let me = onlinePlayers[myId];
-                if (me && me.hp > 0) {
-                    let localVx = 0;
-                    let localFacing = me.facing;
+                if (p1.hp > 0) {
+                    // Gọi handlePlayer() để xử lý input bàn phím/chuột
+                    p1.handlePlayer();
+                    // Gọi update() để áp dụng vật lý (gravity, ground collision, ...)
+                    // update() trong online mode chỉ làm: this.x += this.vx (sau khi handlePlayer đã đặt vx)
+                    p1.update(null);
 
-                    if (keys.a) { localVx = -5;
-                        localFacing = -1; }
-                    if (keys.d) { localVx = 5;
-                        localFacing = 1; }
+                    // Phát hiện va chạm cận chiến giữa người chơi local và đối thủ online
+                    if (p1.isAttacking && !p1.hasHitRegistered) {
+                        let weapon = p1.weapon;
+                        if (!weapon || weapon.type === 'melee' || !weapon.type) {
+                            let box = p1.getAttackBox();
+                            for (let id in onlinePlayers) {
+                                if (id === myId) continue;
+                                let target = onlinePlayers[id];
+                                if (target.hp <= 0) continue;
 
-                    let wantsToJump = false;
-                    if (keys.w) { wantsToJump = true;
-                        keys.w = false; }
+                                let targetCenterX = target.x + 15;
+                                let targetCenterY = target.y + 40;
 
-                    let wantsToAttack = false;
-                    if (keys.click) { wantsToAttack = true;
-                        keys.click = false; }
+                                if (targetCenterX >= box.x && targetCenterX <= box.x + box.width &&
+                                    targetCenterY >= box.y && targetCenterY <= box.y + box.height) {
+                                    p1.hasHitRegistered = true;
+                                    socket.emit("playerHit", {
+                                        roomId: onlineRoomId,
+                                        targetId: id,
+                                        weapon: p1.weapon
+                                    });
+                                    break;
+                                }
+                            }
+                        }
+                    }
 
-                    socket.emit("playerInput", {
+                    // Cập nhật trạng thái người chơi local
+                    if (onlinePlayers[myId]) {
+                        onlinePlayers[myId].x = p1.x;
+                        onlinePlayers[myId].y = p1.y;
+                        onlinePlayers[myId].facing = p1.facing;
+                        onlinePlayers[myId].isAttacking = p1.isAttacking;
+                        onlinePlayers[myId].hp = p1.hp;
+                        onlinePlayers[myId].weapon = p1.weapon;
+                    }
+
+                    // Gửi dữ liệu thao tác sang Server
+                    socket.emit("playerAction", {
                         roomId: onlineRoomId,
-                        vx: localVx,
-                        facing: localFacing,
-                        jump: wantsToJump,
-                        attack: wantsToAttack
+                        x: p1.x,
+                        y: p1.y,
+                        vx: p1.vx,
+                        vy: p1.vy,
+                        facing: p1.facing,
+                        isAttacking: p1.isAttacking,
+                        weapon: p1.weapon,
+                        aimAngle: p1.aimAngle
                     });
 
+                    // Xử lý nhặt vũ khí rơi trên mặt đất
                     Object.keys(clientWeapons).forEach(id => {
                         let wp = clientWeapons[id];
                         if (wp) {
-                            let dist = Math.sqrt(Math.pow(me.x + 15 - wp.x, 2) + Math.pow(me.y + 40 - wp.y, 2));
+                            let dist = Math.sqrt(Math.pow((p1.x + 15) - wp.x, 2) + Math.pow((p1.y + 40) - wp.y, 2));
                             if (dist < 45) {
                                 socket.emit("pickupWeapon", {
                                     roomId: onlineRoomId,
@@ -2315,39 +2513,15 @@
                         }
                     });
 
-                    if (me.weapon) {
-                        updateWeaponHint(me.weapon);
-                    } else {
-                        updateWeaponHint(null);
-                    }
-
-                    if (me) cameraX = me.x - VIEW_WIDTH / 2;
-                }
-
-                Object.keys(clientWeapons).forEach(id => {
-                    let wp = clientWeapons[id];
-                    wp.age = (wp.age || 0) + 1;
-                    if (wp.age > 900) {
-                        delete clientWeapons[id];
-                    }
-                });
-
-                for (let id in onlinePlayers) {
-                    let p = onlinePlayers[id];
-                    if (p.weapon) {
-                        p.weaponAge = (p.weaponAge || 0) + 1;
-                        if (p.weaponAge > 600) {
-                            p.weapon = null;
-                            p.weaponAge = 0;
-                            if (id === myId) updateWeaponHint(null);
-                        }
+                    updateWeaponHint(p1.weapon);
+                    cameraX = p1.x - VIEW_WIDTH / 2;
+                } else {
+                    // Quan sát người chơi còn sống nếu local player bị hạ gục
+                    let aliveIds = Object.keys(onlinePlayers).filter(id => onlinePlayers[id].hp > 0);
+                    if (aliveIds.length > 0) {
+                        cameraX = onlinePlayers[aliveIds[0]].x - VIEW_WIDTH / 2;
                     }
                 }
-
-                grenades.forEach(g => g.update());
-                grenades = grenades.filter(g => g.active);
-
-
             }
 
             if (cameraX < 0) cameraX = 0;
@@ -2474,7 +2648,14 @@
                     p1.draw();
                     p2.draw();
                 } else {
+                    // Vẽ người chơi local nếu còn sống
+                    if (p1.hp > 0) {
+                        p1.draw();
+                    }
+
+                    // Vẽ các đối thủ online
                     for (let id in onlinePlayers) {
+                        if (id === myId) continue;
                         let op = onlinePlayers[id];
                         if (op.hp <= 0) continue;
                         let drawX = op.x - cameraX;
@@ -2482,7 +2663,7 @@
                         ctx.fillStyle = "#555";
                         ctx.fillRect(drawX - 5, op.y - 20, 40, 6);
                         ctx.fillStyle = op.color;
-                        ctx.fillRect(drawX - 5, op.y - 20, (op.hp / 100) * 40, 6);
+                        ctx.fillRect(drawX - 5, op.y - 20, (Math.max(0, op.hp) / 100) * 40, 6);
 
                         ctx.strokeStyle = op.color;
                         ctx.lineWidth = 4;
@@ -2540,7 +2721,7 @@
                             let oWY = op.isAttacking ? shoulderY : oHandY;
                             let oWX = op.isAttacking ? oHandX : oHandX;
 
-                            if (op.weapon.id === 'ak47' || op.weapon.id === 'pistol') {
+                            if (op.weapon.id === 'ak47' || op.weapon.id === 'pistol' || op.weapon.id === 'shotgun' || op.weapon.id === 'sniper') {
                                 ctx.moveTo(oWX, oWY);
                                 ctx.lineTo(oWX + 20 * op.facing, oWY - 2);
                                 ctx.lineTo(oWX + 20 * op.facing, oWY + 6);
@@ -2591,10 +2772,10 @@
                             ctx.restore();
                         }
 
-                        ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                        ctx.font = '9px sans-serif';
+                        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                        ctx.font = 'bold 10px sans-serif';
                         ctx.textAlign = 'center';
-                        let label = id === myId ? 'Bạn' : 'P' + (Object.keys(onlinePlayers).indexOf(id) + 1);
+                        let label = op.label || ('P' + (Object.keys(onlinePlayers).indexOf(id) + 1));
                         ctx.fillText(label, drawX + 15, op.y - 26);
                     }
                 }

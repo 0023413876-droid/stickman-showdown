@@ -26,11 +26,13 @@ const matchQueues = {
 
 // --- CẤU HÌNH HỆ THỐNG VŨ KHÍ & SÁT THƯƠNG ĐÃ GIẢM ---
 const WEAPON_TYPES = [
-    { id: 'ak47', name: 'AK47', color: '#ff4757', type: 'gun', damage: 4 },      // Giảm xuống còn 4 sát thương / viên đạn
-    { id: 'pistol', name: 'Súng Lục', color: '#ffa502', type: 'gun', damage: 3 },  // Giảm xuống còn 3 sát thương / viên đạn
+    { id: 'ak47', name: 'AK47', color: '#ff4757', type: 'gun', damage: 4 },      // 4 sát thương / viên đạn
+    { id: 'pistol', name: 'Súng Lục', color: '#ffa502', type: 'gun', damage: 3 },  // 3 sát thương / viên đạn
+    { id: 'shotgun', name: 'Súng Săn M3', color: '#a29bfe', type: 'gun', damage: 4 }, // Súng săn bắn chùm 5 viên đạn
+    { id: 'sniper', name: 'AWP Sniper', color: '#ff7675', type: 'gun', damage: 20 }, // Súng ngắm sát thương lớn
     { id: 'nade', name: 'Lựu Đạn', color: '#2ed573', type: 'grenade', damage: 25 }, // Sát thương nổ lan diện rộng
-    { id: 'spear', name: 'Giáo', color: '#747d8c', type: 'melee', damage: 6 },     // Giảm xuống còn 6 sát thương
-    { id: 'sword', name: 'Kiếm', color: '#1e90ff', type: 'melee', damage: 8 }      // Giảm xuống còn 8 sát thương
+    { id: 'spear', name: 'Giáo', color: '#747d8c', type: 'melee', damage: 6 },     // 6 sát thương
+    { id: 'sword', name: 'Kiếm', color: '#1e90ff', type: 'melee', damage: 8 }      // 8 sát thương
 ];
 
 // Quản lý trạng thái theo từng phòng
@@ -152,6 +154,7 @@ io.on('connection', (socket) => {
             
             if (roomPlayers[socket.currentRoom]) {
                 delete roomPlayers[socket.currentRoom][socket.id];
+                checkMatchOver(socket.currentRoom);
                 
                 // Nếu phòng không còn ai, dọn dẹp bộ nhớ phòng đó luôn
                 if (Object.keys(roomPlayers[socket.currentRoom]).length === 0) {
@@ -211,22 +214,48 @@ io.on('connection', (socket) => {
 
             // --- BẮN SÚNG / NÉM LỰU ĐẠN XỬ LÝ TRỰC TIẾP TRÊN SERVER ---
             if (data.isAttacking && p.shootCooldown === 0 && p.hp > 0) {
-                p.shootCooldown = 60; // Delay đúng 1 giây (60 frame @ 60 FPS)
                 const weapon = data.weapon;
+                let cd = 15; // Đấm tay đánh thường giảm từ 60 xuống 15 frame (~0.25s)
+                if (weapon) {
+                    if (weapon.id === 'ak47') cd = 10;
+                    else if (weapon.id === 'pistol') cd = 16;
+                    else if (weapon.id === 'shotgun') cd = 35;
+                    else if (weapon.id === 'sniper') cd = 55;
+                    else if (weapon.type === 'melee') cd = 18;
+                    else if (weapon.type === 'grenade') cd = 30;
+                }
+                p.shootCooldown = cd;
                 if (weapon) {
                     if (weapon.type === 'gun') {
                         if (!roomBullets[roomId]) roomBullets[roomId] = [];
                         
                         let aimAngle = data.aimAngle || (data.facing === 1 ? 0 : Math.PI);
-                        roomBullets[roomId].push({
-                            x: data.facing === 1 ? data.x + 35 : data.x - 10,
-                            y: data.y + 25, 
-                            vx: Math.cos(aimAngle) * 16,
-                            vy: Math.sin(aimAngle) * 16,
-                            color: weapon.color,
-                            damage: weapon.damage,
-                            attackerId: socket.id
-                        });
+                        if (weapon.id === 'shotgun') {
+                            // Shotgun bắn chùm 5 viên đạn với góc xòe
+                            for (let i = -2; i <= 2; i++) {
+                                let spreadAngle = aimAngle + (i * 0.08);
+                                roomBullets[roomId].push({
+                                    x: data.facing === 1 ? data.x + 35 : data.x - 10,
+                                    y: data.y + 25, 
+                                    vx: Math.cos(spreadAngle) * 16,
+                                    vy: Math.sin(spreadAngle) * 16,
+                                    color: weapon.color,
+                                    damage: weapon.damage || 4,
+                                    attackerId: socket.id
+                                });
+                            }
+                        } else {
+                            let bulletSpeed = weapon.id === 'sniper' ? 24 : 16;
+                            roomBullets[roomId].push({
+                                x: data.facing === 1 ? data.x + 35 : data.x - 10,
+                                y: data.y + 25, 
+                                vx: Math.cos(aimAngle) * bulletSpeed,
+                                vy: Math.sin(aimAngle) * bulletSpeed,
+                                color: weapon.color,
+                                damage: weapon.damage || 4,
+                                attackerId: socket.id
+                            });
+                        }
                     } else if (weapon.type === 'grenade') {
                         if (!roomGrenades[roomId]) roomGrenades[roomId] = [];
                         
