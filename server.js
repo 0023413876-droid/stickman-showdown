@@ -8,7 +8,7 @@ const server = http.createServer(app);
 // Cấu hình CORS và Ping/Pong để tránh ngắt kết nối khi nâng cấp transport
 const io = new Server(server, {
     cors: {
-        origin: "*", 
+        origin: "*",
         methods: ["GET", "POST"]
     },
     pingTimeout: 30000,
@@ -39,7 +39,7 @@ const WEAPON_TYPES = [
 
 // Quản lý trạng thái theo từng phòng
 let roomPlayers = {};  // Lưu trữ vị trí/máu/trang bị của người chơi: { [roomId]: { [playerId]: { x, y, hp, width, height, weapon } } }
-let roomWeapons = {}; 
+let roomWeapons = {};
 let roomBullets = {};  // Quản lý đạn bay: { [roomId]: [ { x, y, vx, vy, color, damage, attackerId } ] }
 let roomGrenades = {}; // Quản lý lựu đạn: { [roomId]: [ { x, y, vx, vy, timer, color, damage, attackerId } ] }
 let disconnectTimers = {}; // Quản lý grace period 15s cho người chơi tạm mất kết nối
@@ -77,23 +77,23 @@ io.on('connection', (socket) => {
 
     // TÌM TRẬN
     socket.on('findMatch', (data) => {
-        const maxPlayers = (data && data.maxPlayers) ? data.maxPlayers : 2; 
+        const maxPlayers = (data && data.maxPlayers) ? data.maxPlayers : 2;
         socket.clientPlayerId = data ? data.clientPlayerId : null;
-        
+
         removeFromQueue(socket);
 
         if (matchQueues[maxPlayers]) {
             matchQueues[maxPlayers].push(socket);
-            socket.waitingMode = maxPlayers; 
-            
+            socket.waitingMode = maxPlayers;
+
             console.log(`⏳ [Server Log] Người chơi ${socket.id} (ClientPlayerID: ${socket.clientPlayerId || 'N/A'}) xếp hàng (Chế độ ${maxPlayers} người) - (${matchQueues[maxPlayers].length}/${maxPlayers})`);
-            
+
             updateQueueStatus(maxPlayers);
 
             // Gom đủ người thì tạo phòng
             if (matchQueues[maxPlayers].length === maxPlayers) {
-                const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5); 
-                
+                const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+
                 const playersInRoom = matchQueues[maxPlayers].splice(0, maxPlayers);
                 const playersConfig = {};
 
@@ -145,7 +145,7 @@ io.on('connection', (socket) => {
                         players: playersConfig
                     });
                 });
-                
+
                 console.log(`🎬 [Server Log] Trận đấu bắt đầu tại phòng: ${roomId} (Gồm ${maxPlayers} người)`);
             }
         }
@@ -276,7 +276,7 @@ io.on('connection', (socket) => {
             if (data.weapon && data.weapon.damage) {
                 finalDamage = data.weapon.damage;
             }
-            
+
             // Đồng bộ cập nhật trừ máu trên Server
             if (roomPlayers[data.roomId] && roomPlayers[data.roomId][data.targetId]) {
                 let target = roomPlayers[data.roomId][data.targetId];
@@ -304,14 +304,14 @@ io.on('connection', (socket) => {
         const roomId = data.roomId;
         if (roomId && roomPlayers[roomId] && roomPlayers[roomId][socket.id]) {
             let p = roomPlayers[roomId][socket.id];
-            
+
             // Cập nhật tọa độ real-time & vũ khí từ client lên bộ dữ liệu server
             p.x = data.x;
             p.y = data.y;
             if (data.weapon !== undefined) {
                 p.weapon = data.weapon;
             }
-            
+
             if (p.shootCooldown > 0) p.shootCooldown--;
 
             // --- BẮN SÚNG / NÉM LỰU ĐẠN XỬ LÝ TRỰC TIẾP TRÊN SERVER ---
@@ -330,14 +330,14 @@ io.on('connection', (socket) => {
                 if (weapon) {
                     if (weapon.type === 'gun') {
                         if (!roomBullets[roomId]) roomBullets[roomId] = [];
-                        
+
                         let aimAngle = data.aimAngle || (data.facing === 1 ? 0 : Math.PI);
                         if (weapon.id === 'shotgun') {
                             for (let i = -2; i <= 2; i++) {
                                 let spreadAngle = aimAngle + (i * 0.08);
                                 roomBullets[roomId].push({
                                     x: data.facing === 1 ? data.x + 35 : data.x - 10,
-                                    y: data.y + 25, 
+                                    y: data.y + 25,
                                     vx: Math.cos(spreadAngle) * 16,
                                     vy: Math.sin(spreadAngle) * 16,
                                     color: weapon.color,
@@ -349,7 +349,7 @@ io.on('connection', (socket) => {
                             let bulletSpeed = weapon.id === 'sniper' ? 24 : 16;
                             roomBullets[roomId].push({
                                 x: data.facing === 1 ? data.x + 35 : data.x - 10,
-                                y: data.y + 25, 
+                                y: data.y + 25,
                                 vx: Math.cos(aimAngle) * bulletSpeed,
                                 vy: Math.sin(aimAngle) * bulletSpeed,
                                 color: weapon.color,
@@ -359,7 +359,7 @@ io.on('connection', (socket) => {
                         }
                     } else if (weapon.type === 'grenade') {
                         if (!roomGrenades[roomId]) roomGrenades[roomId] = [];
-                        
+
                         let aimAngle = data.aimAngle || (data.facing === 1 ? 0 : Math.PI);
                         roomGrenades[roomId].push({
                             x: data.facing === 1 ? data.x + 30 : data.x - 10,
@@ -388,7 +388,7 @@ io.on('connection', (socket) => {
                 facing: data.facing,
                 isAttacking: data.isAttacking,
                 hp: p.hp,
-                weapon: p.weapon || data.weapon 
+                weapon: p.weapon || data.weapon
             });
         }
     });
@@ -398,17 +398,17 @@ io.on('connection', (socket) => {
         const { roomId, weaponId } = data || {};
         if (roomId && roomWeapons[roomId] && roomWeapons[roomId][weaponId]) {
             const pickedWeapon = roomWeapons[roomId][weaponId].info;
-            
+
             // Xóa vũ khí khỏi sàn đấu
             delete roomWeapons[roomId][weaponId];
-            
+
             // Lưu vũ khí vào trạng thái player trên Server để không bị reset khi sync
             if (roomPlayers[roomId] && roomPlayers[roomId][socket.id]) {
                 roomPlayers[roomId][socket.id].weapon = pickedWeapon;
             }
 
             console.log(`🎒 [Server Log] Người chơi ${socket.id} nhặt được vũ khí: ${pickedWeapon ? pickedWeapon.name : 'Unknown'} (Phòng: ${roomId})`);
-            
+
             // Báo cho cả phòng biết
             io.to(roomId).emit('weaponPickedUp', {
                 weaponId: weaponId,
@@ -486,7 +486,7 @@ io.on('connection', (socket) => {
         const roomId = socket.currentRoom;
         if (roomId && roomPlayers[roomId] && roomPlayers[roomId][socket.id]) {
             console.log(`⏳ [Server Log] Giữ nguyên phòng ${roomId} cho ${socket.id} trong 15s cho phép reconnect...`);
-            
+
             // Đánh dấu tạm ngắt kết nối
             roomPlayers[roomId][socket.id].disconnected = true;
 
@@ -494,7 +494,7 @@ io.on('connection', (socket) => {
             disconnectTimers[socket.id] = setTimeout(() => {
                 console.log(`⏰ [Server Log] Hết 15s Grace Period cho ${socket.id} trong phòng ${roomId}. Thực hiện dọn dẹp...`);
                 delete disconnectTimers[socket.id];
-                
+
                 if (roomPlayers[roomId] && roomPlayers[roomId][socket.id]) {
                     delete roomPlayers[roomId][socket.id];
                     socket.to(roomId).emit('playerLeft', { id: socket.id });
@@ -518,7 +518,7 @@ function checkMatchOver(roomId) {
     if (!roomPlayers[roomId]) return;
     const players = roomPlayers[roomId];
     const playerIds = Object.keys(players);
-    
+
     // Đếm số người chơi còn sống (máu > 0)
     const alivePlayers = playerIds.filter(id => players[id].hp > 0);
 
@@ -556,17 +556,17 @@ setInterval(() => {
     Object.keys(roomPlayers).forEach(roomId => {
         const roomExists = io.sockets.adapter.rooms.get(roomId);
         if (roomExists && roomExists.size > 0) {
-            
+
             if (!roomWeapons[roomId]) roomWeapons[roomId] = {};
 
             const weaponId = 'wp_' + Math.random().toString(36).substr(2, 9);
             const randomType = WEAPON_TYPES[Math.floor(Math.random() * WEAPON_TYPES.length)];
-            
+
             roomWeapons[roomId][weaponId] = {
                 id: weaponId,
                 info: randomType,
                 x: 100 + Math.random() * 1400, // Thả ngẫu nhiên trải rộng theo bản đồ rộng 1600px
-                y: -30,                      
+                y: -30,
                 isGrounded: false
             };
 
@@ -595,7 +595,7 @@ setInterval(() => {
         Object.keys(roomWeapons[roomId]).forEach(weaponId => {
             let wp = roomWeapons[roomId][weaponId];
             if (!wp.isGrounded) {
-                wp.y += 4; 
+                wp.y += 4;
                 if (wp.y >= 335) { // Khớp với GROUND_Y (350) trừ đi chiều cao hộp mô hình vũ khí (15)
                     wp.y = 335;
                     wp.isGrounded = true;
@@ -620,7 +620,7 @@ setInterval(() => {
                 const players = roomPlayers[roomId];
                 for (let pId in players) {
                     if (pId === b.attackerId) continue; // Tuyệt đối không tự bắn trúng bản thân
-                    
+
                     let target = players[pId];
                     if (target.hp <= 0) continue;
 
@@ -658,15 +658,15 @@ setInterval(() => {
 
         for (let i = grenades.length - 1; i >= 0; i--) {
             let g = grenades[i];
-            
+
             // Áp dụng gia tốc trọng lực rơi tự do cho quả lựu đạn
-            g.vy += 0.35; 
+            g.vy += 0.35;
             g.x += g.vx;
             g.y += g.vy;
             g.vx *= 0.98; // Lực cản không khí làm chậm tốc độ lăn
 
             // Giả lập va chạm mặt đất (GROUND_Y = 350 trừ đi bán kính lựu đạn)
-            if (g.y >= 344) { 
+            if (g.y >= 344) {
                 g.y = 344;
                 g.vy = -g.vy * 0.4; // Đập nền nảy nhẹ lên trên bản đồ
                 g.vx *= 0.7;        // Ma sát mạnh làm chậm khi tiếp đất lăn
@@ -690,7 +690,7 @@ setInterval(() => {
 
                         // Công thức toán học Pythagore tính khoảng cách từ tâm lựu đạn tới giữa thân người chơi
                         let dist = Math.sqrt(Math.pow(targetCenterX - g.x, 2) + Math.pow(targetCenterY - g.y, 2));
-                        
+
                         if (dist <= explosionRadius) {
                             // Sát thương giảm dần đều nếu đứng càng xa tâm vụ nổ lựu đạn
                             let damageFalloff = Math.round(g.damage * (1 - dist / (explosionRadius + 20)));
