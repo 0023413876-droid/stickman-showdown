@@ -2485,31 +2485,6 @@
         //  VÒNG LẶP CẬP NHẬT (GAME LOOP)
         // ============================================================
         function update() {
-            if (!gameMode || isGameOver) return;
-
-            // === OFFLINE MODE ===
-            if (gameMode !== 'online') {
-                p1.update(p2);
-                p2.update(p1);
-
-                updateWeaponHint(p1.weapon);
-
-                offlineWeaponSpawnTimer++;
-                if (offlineWeaponSpawnTimer > 350) {
-                    offlineWeaponSpawnTimer = 0;
-                    let keysArr = Object.keys(WEAPON_TYPES);
-                    let randomType = WEAPON_TYPES[keysArr[Math.floor(Math.random() * keysArr.length)]];
-                    let randId = 'off_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-                    clientWeapons[randId] = {
-                        id: randId,
-                        x: Math.random() * (MAP_WIDTH - 200) + 100,
-                        y: GROUND_Y - 10,
-                        info: { ...randomType },
-                        age: 0
-                    };
-                }
-
-        function update() {
             try {
                 if (!gameMode || isGameOver) return;
 
