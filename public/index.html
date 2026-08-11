@@ -518,7 +518,20 @@
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
 
-        const socket = (typeof io !== "undefined") ? io() : { emit: () => {}, on: () => {} };
+        let clientPlayerId = localStorage.getItem("stickman_client_player_id");
+        if (!clientPlayerId) {
+            clientPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+            localStorage.setItem("stickman_client_player_id", clientPlayerId);
+        }
+
+        const socket = (typeof io !== "undefined") ? io({
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: 15,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000
+        }) : { emit: () => {}, on: () => {} };
 
         const GRAVITY = 0.6;
         const GROUND_Y = 350;
@@ -1379,8 +1392,40 @@
                 }, 150);
             }
             draw() {
-                if (this.hp <= 0) return;
                 let drawX = this.x - cameraX;
+
+                if (this.hp <= 0) {
+                    // Draw defeated stickman on ground instead of vanishing completely
+                    let groundHeadY = GROUND_Y - 10;
+                    ctx.save();
+                    ctx.globalAlpha = 0.6;
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = "round";
+                    // Head
+                    ctx.beginPath();
+                    ctx.arc(drawX + 15, groundHeadY, 10, 0, Math.PI * 2);
+                    ctx.stroke();
+                    // Body lying flat on ground
+                    ctx.beginPath();
+                    ctx.moveTo(drawX + 25, groundHeadY);
+                    ctx.lineTo(drawX + 60, groundHeadY);
+                    ctx.stroke();
+                    // Crossed eyes
+                    ctx.strokeStyle = '#ff4757';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(drawX + 11, groundHeadY - 4); ctx.lineTo(drawX + 17, groundHeadY + 2);
+                    ctx.moveTo(drawX + 17, groundHeadY - 4); ctx.lineTo(drawX + 11, groundHeadY + 2);
+                    ctx.stroke();
+                    // Name label
+                    ctx.fillStyle = '#ff4757';
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`💀 ${this.name || "Stickman"}`, drawX + 35, groundHeadY - 14);
+                    ctx.restore();
+                    return;
+                }
 
                 let barY = this.isProne ? GROUND_Y - 45 : this.y - 20;
                 let nameY = barY - 8;
@@ -1969,8 +2014,36 @@
         }
 
         // ============================================================
-        //  ONLINE SOCKET.IO
+        //  ONLINE SOCKET.IO WITH LOGGING & RECONNECT RESILIENCE
         // ============================================================
+        socket.on("connect", () => {
+            console.log(`🔌 [Client Log] Socket connected! ID: ${socket.id} | ClientPlayerID: ${clientPlayerId} | Thời điểm: ${new Date().toLocaleTimeString()}`);
+            if (gameMode === 'online' && onlineRoomId && myId && myId !== socket.id) {
+                console.log(`🔄 [Client Log] Tự động gửi RejoinMatch đến phòng ${onlineRoomId} cho Socket mới ${socket.id}...`);
+                socket.emit("rejoinMatch", {
+                    roomId: onlineRoomId,
+                    oldMyId: myId,
+                    clientPlayerId: clientPlayerId
+                });
+            }
+        });
+
+        socket.on("disconnect", (reason) => {
+            console.warn(`⚠️ [Client Log] Socket bị ngắt kết nối! Lý do: ${reason} | Thời điểm: ${new Date().toLocaleTimeString()}`);
+        });
+
+        socket.on("connect_error", (error) => {
+            console.error(`❌ [Client Log] Lỗi kết nối Socket:`, error ? error.message : error);
+        });
+
+        socket.on("reconnect_attempt", (attempt) => {
+            console.log(`🔁 [Client Log] Thử kết nối lại lần #${attempt}...`);
+        });
+
+        socket.on("reconnect", (attemptNumber) => {
+            console.log(`✅ [Client Log] Kết nối lại thành công ở lần thử #${attemptNumber}! Socket ID mới: ${socket.id}`);
+        });
+
         function startOnlineMatchmaking(maxPlayers) {
             document.getElementById("onlineMenu").style.display = "none";
             document.getElementById("matchmakingMenu").style.display = "flex";
@@ -1978,10 +2051,12 @@
             document.getElementById('gameCanvas').classList.add('hidden');
             document.querySelector('.controls').classList.add('hidden');
             document.getElementById('mobileControls').classList.add('hidden');
-            socket.emit("findMatch", { maxPlayers: maxPlayers });
+            console.log(`⏳ [Client Log] Gửi yêu cầu tìm trận (Chế độ ${maxPlayers} người)...`);
+            socket.emit("findMatch", { maxPlayers: maxPlayers, clientPlayerId: clientPlayerId });
         }
 
         function cancelOnlineMatchmaking() {
+            console.log(`❌ [Client Log] Hủy tìm trận.`);
             socket.emit("cancelFindMatch");
             resetToMenu();
         }
@@ -1989,6 +2064,7 @@
         socket.on("queueUpdate", (data) => {
             if (data && data.count !== undefined) {
                 document.getElementById("playerCountText").innerText = `Đang tìm người chơi: ${data.count}/${data.target}`;
+                console.log(`⏳ [Client Log] Cập nhật hàng đợi: ${data.count}/${data.target}`);
             }
         });
 
@@ -2003,6 +2079,8 @@
             bullets = [];
             grenades = [];
             clientWeapons = {};
+
+            console.log(`🎬 [Client Log] ĐÃ TÌM THẤY TRẬN! RoomID: ${onlineRoomId} | MyID: ${myId}`);
 
             document.getElementById("menu").style.display = "none";
             document.getElementById("inGameMenuBtn").style.display = "block";
@@ -2027,7 +2105,7 @@
                     hp: pConf.hp || 100,
                     facing: pConf.facing || 1,
                     isAttacking: false,
-                    weapon: null,
+                    weapon: pConf.weapon || null,
                     weaponAge: 0,
                     label: id === myId ? p1Name : `P${index + 1}`
                 };
@@ -2039,43 +2117,127 @@
                 p1.color = myConf.color || "#3498db";
                 p1.name = p1Name;
                 p1.hp = 100;
-                p1.weapon = null;
+                p1.weapon = myConf.weapon || null;
                 p1.controls = { left: 'a', right: 'd', up: 'w', down: 's', attack: 'click' };
             }
 
             document.getElementById("weaponHint").style.display = "block";
-            updateWeaponHint(null);
+            updateWeaponHint(p1.weapon);
+        });
+
+        socket.on("rejoinedMatch", (data) => {
+            console.log("🎉 [Client Log] Rejoin trận đấu thành công!", data);
+            myId = data.myId;
+            onlineRoomId = data.roomId;
+            gameMode = 'online';
+            isGameOver = false;
+
+            let p1Name = document.getElementById("p1NameInput") ? document.getElementById("p1NameInput").value.trim() : "Bạn";
+
+            if (data.players) {
+                for (let id in data.players) {
+                    let pConf = data.players[id];
+                    if (!onlinePlayers[id]) {
+                        let pIndex = Object.keys(onlinePlayers).length + 1;
+                        onlinePlayers[id] = {
+                            id: id,
+                            x: pConf.x,
+                            y: pConf.y,
+                            color: pConf.color || ONLINE_COLORS[pIndex % ONLINE_COLORS.length] || "#e74c3c",
+                            hp: pConf.hp !== undefined ? pConf.hp : 100,
+                            facing: pConf.facing || 1,
+                            isAttacking: false,
+                            weapon: pConf.weapon || null,
+                            weaponAge: 0,
+                            label: id === myId ? p1Name : `P${pIndex}`
+                        };
+                    } else {
+                        onlinePlayers[id].hp = pConf.hp;
+                        if (pConf.weapon) onlinePlayers[id].weapon = pConf.weapon;
+                    }
+                }
+            }
+
+            if (data.players && data.players[myId]) {
+                let myConf = data.players[myId];
+                p1.hp = myConf.hp;
+                if (myConf.weapon) {
+                    p1.weapon = myConf.weapon;
+                    updateWeaponHint(p1.weapon);
+                }
+                console.log(`🎒 [Client Log] Khôi phục thành công trang bị/vũ khí:`, p1.weapon ? p1.weapon.name : 'Không');
+            }
+        });
+
+        socket.on("rejoinFailed", () => {
+            console.warn("⚠️ [Client Log] Rejoin thất bại. Phòng hoặc dữ liệu người chơi đã kết thúc.");
+            if (gameMode === 'online') {
+                resetToMenu();
+            }
         });
 
         socket.on("opponentAction", (data) => {
-            if (gameMode !== 'online') return;
-            if (data && onlinePlayers[data.id]) {
-                let op = onlinePlayers[data.id];
-                op.x = data.x;
-                op.y = data.y;
-                op.vx = data.vx;
-                op.vy = data.vy;
-                op.facing = data.facing;
-                op.isAttacking = data.isAttacking;
-                op.hp = data.hp;
-                if (data.weapon !== undefined) op.weapon = data.weapon;
+            if (gameMode !== 'online' || !data || !data.id) return;
+            if (data.id === myId) return;
+            if (!onlinePlayers[data.id]) {
+                let pIndex = Object.keys(onlinePlayers).length + 1;
+                onlinePlayers[data.id] = {
+                    id: data.id,
+                    x: data.x || 350,
+                    y: data.y || 270,
+                    color: ONLINE_COLORS[pIndex % ONLINE_COLORS.length] || "#e74c3c",
+                    hp: data.hp !== undefined ? data.hp : 100,
+                    facing: data.facing || 1,
+                    isAttacking: false,
+                    weapon: null,
+                    weaponAge: 0,
+                    label: `P${pIndex}`
+                };
             }
+            let op = onlinePlayers[data.id];
+            op.x = data.x;
+            op.y = data.y;
+            op.vx = data.vx;
+            op.vy = data.vy;
+            op.facing = data.facing;
+            op.isAttacking = data.isAttacking;
+            if (data.hp !== undefined) op.hp = data.hp;
+            op._lastActionTime = Date.now();
+            if (data.weapon !== undefined) op.weapon = data.weapon;
         });
 
         socket.on("roomStateUpdate", (data) => {
             if (gameMode !== 'online' || !data) return;
 
-            // Đồng bộ vị trí & HP đối thủ
             if (data.players) {
                 for (let id in data.players) {
                     let sp = data.players[id];
                     if (id === myId) {
-                        p1.hp = sp.hp;
-                        if (onlinePlayers[myId]) onlinePlayers[myId].hp = sp.hp;
-                    } else if (onlinePlayers[id]) {
-                        onlinePlayers[id].x = sp.x;
-                        onlinePlayers[id].y = sp.y;
+                        if (sp.hp < p1.hp) {
+                            p1.hp = sp.hp;
+                        }
+                        if (onlinePlayers[myId]) onlinePlayers[myId].hp = p1.hp;
+                    } else {
+                        if (!onlinePlayers[id]) {
+                            let pIndex = Object.keys(onlinePlayers).length + 1;
+                            onlinePlayers[id] = {
+                                id: id,
+                                x: sp.x || 350,
+                                y: sp.y || 270,
+                                color: sp.color || ONLINE_COLORS[pIndex % ONLINE_COLORS.length] || "#e74c3c",
+                                hp: sp.hp !== undefined ? sp.hp : 100,
+                                facing: 1,
+                                isAttacking: false,
+                                weapon: null,
+                                weaponAge: 0,
+                                label: `P${pIndex}`
+                            };
+                        }
                         onlinePlayers[id].hp = sp.hp;
+                        if (!onlinePlayers[id]._lastActionTime || (Date.now() - onlinePlayers[id]._lastActionTime > 200)) {
+                            onlinePlayers[id].x = sp.x;
+                            onlinePlayers[id].y = sp.y;
+                        }
                     }
                 }
             }
@@ -2443,10 +2605,10 @@
             } else {
                 // === ONLINE MODE ===
                 if (p1.hp > 0) {
-                    // Gọi handlePlayer() để xử lý input bàn phím/chuột
+                    // Gọi handlePlayer() để xử lý input bàn phím/chuột (đặt vx dựa theo phím)
                     p1.handlePlayer();
-                    // Gọi update() để áp dụng vật lý (gravity, ground collision, ...)
-                    // update() trong online mode chỉ làm: this.x += this.vx (sau khi handlePlayer đã đặt vx)
+                    // Gọi update() để áp dụng vật lý (gravity, ground collision, x += vx)
+                    // update() trong online mode KHÔNG gọi handlePlayer() lại (tránh double vx)
                     p1.update(null);
 
                     // Phát hiện va chạm cận chiến giữa người chơi local và đối thủ online
@@ -2648,8 +2810,8 @@
                     p1.draw();
                     p2.draw();
                 } else {
-                    // Vẽ người chơi local nếu còn sống
-                    if (p1.hp > 0) {
+                    // Vẽ người chơi local (luôn vẽ nếu còn trong game, kể cả hp = 0 để thấy "ngã")
+                    if (p1.hp > 0 || onlinePlayers[myId]) {
                         p1.draw();
                     }
 
@@ -2657,8 +2819,37 @@
                     for (let id in onlinePlayers) {
                         if (id === myId) continue;
                         let op = onlinePlayers[id];
-                        if (op.hp <= 0) continue;
+                        if (!op) continue;
                         let drawX = op.x - cameraX;
+
+                        if (op.hp <= 0) {
+                            let groundHeadY = GROUND_Y - 10;
+                            ctx.save();
+                            ctx.globalAlpha = 0.6;
+                            ctx.strokeStyle = op.color || "#e74c3c";
+                            ctx.lineWidth = 3;
+                            ctx.lineCap = "round";
+                            ctx.beginPath();
+                            ctx.arc(drawX + 15, groundHeadY, 10, 0, Math.PI * 2);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.moveTo(drawX + 25, groundHeadY);
+                            ctx.lineTo(drawX + 60, groundHeadY);
+                            ctx.stroke();
+                            ctx.strokeStyle = '#ff4757';
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.moveTo(drawX + 11, groundHeadY - 4); ctx.lineTo(drawX + 17, groundHeadY + 2);
+                            ctx.moveTo(drawX + 17, groundHeadY - 4); ctx.lineTo(drawX + 11, groundHeadY + 2);
+                            ctx.stroke();
+                            ctx.fillStyle = '#ff4757';
+                            ctx.font = 'bold 11px sans-serif';
+                            ctx.textAlign = 'center';
+                            let deadLabel = op.label || ('P' + (Object.keys(onlinePlayers).indexOf(id) + 1));
+                            ctx.fillText(`💀 ${deadLabel}`, drawX + 35, groundHeadY - 14);
+                            ctx.restore();
+                            continue;
+                        }
 
                         ctx.fillStyle = "#555";
                         ctx.fillRect(drawX - 5, op.y - 20, 40, 6);

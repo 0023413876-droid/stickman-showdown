@@ -5,12 +5,14 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
-// Cấu hình CORS để chạy trên các môi trường Cloud (Render,...)
+// Cấu hình CORS và Ping/Pong để tránh ngắt kết nối khi nâng cấp transport
 const io = new Server(server, {
     cors: {
         origin: "*", 
         methods: ["GET", "POST"]
-    }
+    },
+    pingTimeout: 30000,
+    pingInterval: 10000
 });
 
 // Phục vụ file tĩnh trong thư mục public
@@ -36,13 +38,14 @@ const WEAPON_TYPES = [
 ];
 
 // Quản lý trạng thái theo từng phòng
-let roomPlayers = {};  // Lưu trữ vị trí/máu của người chơi: { [roomId]: { [playerId]: { x, y, hp, width, height } } }
+let roomPlayers = {};  // Lưu trữ vị trí/máu/trang bị của người chơi: { [roomId]: { [playerId]: { x, y, hp, width, height, weapon } } }
 let roomWeapons = {}; 
 let roomBullets = {};  // Quản lý đạn bay: { [roomId]: [ { x, y, vx, vy, color, damage, attackerId } ] }
 let roomGrenades = {}; // Quản lý lựu đạn: { [roomId]: [ { x, y, vx, vy, timer, color, damage, attackerId } ] }
+let disconnectTimers = {}; // Quản lý grace period 15s cho người chơi tạm mất kết nối
 
 io.on('connection', (socket) => {
-    console.log(`🦇 Người chơi kết nối thành công: ${socket.id}`);
+    console.log(`🔌 [Server Log] Người chơi kết nối thành công: ${socket.id} (Thời điểm: ${new Date().toLocaleTimeString()})`);
 
     const updateQueueStatus = (maxPlayers) => {
         const queue = matchQueues[maxPlayers];
@@ -63,7 +66,7 @@ io.on('connection', (socket) => {
                 if (index !== -1) {
                     matchQueues[mode].splice(index, 1);
                     updateQueueStatus(mode);
-                    console.log(`❌ Người chơi ${socket.id} đã hủy tìm trận. Rời hàng đợi chế độ ${mode} người.`);
+                    console.log(`❌ [Server Log] Người chơi ${socket.id} đã hủy tìm trận. Rời hàng đợi chế độ ${mode} người.`);
                 }
             }
             socket.waitingMode = null;
@@ -73,6 +76,7 @@ io.on('connection', (socket) => {
     // TÌM TRẬN
     socket.on('findMatch', (data) => {
         const maxPlayers = (data && data.maxPlayers) ? data.maxPlayers : 2; 
+        socket.clientPlayerId = data ? data.clientPlayerId : null;
         
         removeFromQueue(socket);
 
@@ -80,7 +84,7 @@ io.on('connection', (socket) => {
             matchQueues[maxPlayers].push(socket);
             socket.waitingMode = maxPlayers; 
             
-            console.log(`⏳ Người chơi ${socket.id} đang xếp hàng tại phòng chờ (Chế độ ${maxPlayers} người) - (${matchQueues[maxPlayers].length}/${maxPlayers})`);
+            console.log(`⏳ [Server Log] Người chơi ${socket.id} (ClientPlayerID: ${socket.clientPlayerId || 'N/A'}) xếp hàng (Chế độ ${maxPlayers} người) - (${matchQueues[maxPlayers].length}/${maxPlayers})`);
             
             updateQueueStatus(maxPlayers);
 
@@ -89,8 +93,6 @@ io.on('connection', (socket) => {
                 const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5); 
                 
                 const playersInRoom = matchQueues[maxPlayers].splice(0, maxPlayers);
-                
-                // Chuẩn bị object danh sách người chơi truyền xuống Client khởi tạo ban đầu
                 const playersConfig = {};
 
                 // Khởi tạo bộ nhớ riêng cho phòng này trên Server
@@ -105,17 +107,20 @@ io.on('connection', (socket) => {
                     p.waitingMode = null;
 
                     const startX = 150 + index * 200;
-                    const startY = 270; // Khớp với GROUND_Y (350) trừ chiều cao nhân vật (80) trên Client
+                    const startY = 270;
 
-                    // Khởi tạo thông số người chơi trên server để tính toán hitbox va chạm vật lý
+                    // Khởi tạo thông số người chơi trên server
                     roomPlayers[roomId][p.id] = {
                         id: p.id,
+                        clientPlayerId: p.clientPlayerId || p.id,
                         x: startX,
                         y: startY,
                         hp: 100,
                         width: 30,
                         height: 80,
-                        shootCooldown: 0 // Biến chống spam xả đạn quá nhanh
+                        facing: 1,
+                        weapon: null, // Lưu trang bị/vũ khí để không bị reset
+                        shootCooldown: 0
                     };
 
                     playersConfig[p.id] = {
@@ -123,7 +128,8 @@ io.on('connection', (socket) => {
                         y: startY,
                         hp: 100,
                         color: `hsl(${(index * 360 / maxPlayers)}, 70%, 50%)`,
-                        facing: 1
+                        facing: 1,
+                        weapon: null
                     };
                 });
 
@@ -136,9 +142,78 @@ io.on('connection', (socket) => {
                     });
                 });
                 
-                console.log(`🎬 Trận đấu bắt đầu tại phòng: ${roomId} (Gồm ${maxPlayers} người)`);
+                console.log(`🎬 [Server Log] Trận đấu bắt đầu tại phòng: ${roomId} (Gồm ${maxPlayers} người)`);
             }
         }
+    });
+
+    // REJOIN MATCH (KHÔI PHỤC KHI RECONNECT)
+    socket.on('rejoinMatch', (data) => {
+        const { roomId, oldMyId, clientPlayerId } = data || {};
+        console.log(`🔄 [Server Log] Người chơi yêu cầu Rejoin: Socket mới=${socket.id}, Socket cũ=${oldMyId}, ClientPlayerID=${clientPlayerId}, Phòng=${roomId}`);
+
+        if (roomId && roomPlayers[roomId]) {
+            let foundOldId = null;
+            if (oldMyId && roomPlayers[roomId][oldMyId]) {
+                foundOldId = oldMyId;
+            } else {
+                for (let pid in roomPlayers[roomId]) {
+                    if (roomPlayers[roomId][pid].clientPlayerId === clientPlayerId) {
+                        foundOldId = pid;
+                        break;
+                    }
+                }
+            }
+
+            if (foundOldId) {
+                // Hủy timer dọn dẹp nếu người chơi quay lại trong 15s grace period
+                if (disconnectTimers[foundOldId]) {
+                    clearTimeout(disconnectTimers[foundOldId]);
+                    delete disconnectTimers[foundOldId];
+                    console.log(`✅ [Server Log] Đã hủy Disconnect Timer cho ${foundOldId}`);
+                }
+
+                // Chuyển dữ liệu người chơi sang Socket ID mới
+                let pState = roomPlayers[roomId][foundOldId];
+                delete roomPlayers[roomId][foundOldId];
+
+                pState.id = socket.id;
+                delete pState.disconnected;
+                delete pState.disconnectTime;
+                roomPlayers[roomId][socket.id] = pState;
+
+                socket.join(roomId);
+                socket.currentRoom = roomId;
+                socket.clientPlayerId = clientPlayerId;
+
+                const playersConfig = {};
+                for (let pid in roomPlayers[roomId]) {
+                    let p = roomPlayers[roomId][pid];
+                    playersConfig[pid] = {
+                        x: p.x,
+                        y: p.y,
+                        hp: p.hp,
+                        color: p.color || "#3498db",
+                        facing: p.facing || 1,
+                        weapon: p.weapon || null
+                    };
+                }
+
+                socket.emit('rejoinedMatch', {
+                    roomId: roomId,
+                    myId: socket.id,
+                    players: playersConfig,
+                    weapons: roomWeapons[roomId] || {}
+                });
+
+                socket.to(roomId).emit('playerReconnected', { oldId: foundOldId, newId: socket.id });
+                console.log(`🎉 [Server Log] Rejoin thành công phòng ${roomId}! Giữ nguyên Trang bị/Vũ khí: ${pState.weapon ? pState.weapon.name : 'Không'}`);
+                return;
+            }
+        }
+
+        console.log(`⚠️ [Server Log] Rejoin thất bại cho ${socket.id} (Phòng hoặc thông tin không còn).`);
+        socket.emit('rejoinFailed');
     });
 
     // HỦY TÌM TRẬN
@@ -149,7 +224,7 @@ io.on('connection', (socket) => {
     // CHỦ ĐỘNG THOÁT TRẬN (TỪ NÚT 3 VẠCH HOẶC NÚT THOÁT)
     socket.on('leaveMatch', () => {
         if (socket.currentRoom) {
-            console.log(`🏃 Người chơi ${socket.id} đã chủ động thoát khỏi trận!`);
+            console.log(`🏃 [Server Log] Người chơi ${socket.id} đã chủ động thoát khỏi trận!`);
             socket.to(socket.currentRoom).emit('playerLeft', { id: socket.id });
             
             if (roomPlayers[socket.currentRoom]) {
@@ -206,16 +281,19 @@ io.on('connection', (socket) => {
         if (roomId && roomPlayers[roomId] && roomPlayers[roomId][socket.id]) {
             let p = roomPlayers[roomId][socket.id];
             
-            // Cập nhật tọa độ real-time từ client lên bộ dữ liệu server phục vụ tính va chạm
+            // Cập nhật tọa độ real-time & vũ khí từ client lên bộ dữ liệu server
             p.x = data.x;
             p.y = data.y;
+            if (data.weapon !== undefined) {
+                p.weapon = data.weapon;
+            }
             
             if (p.shootCooldown > 0) p.shootCooldown--;
 
             // --- BẮN SÚNG / NÉM LỰU ĐẠN XỬ LÝ TRỰC TIẾP TRÊN SERVER ---
             if (data.isAttacking && p.shootCooldown === 0 && p.hp > 0) {
                 const weapon = data.weapon;
-                let cd = 15; // Đấm tay đánh thường giảm từ 60 xuống 15 frame (~0.25s)
+                let cd = 15;
                 if (weapon) {
                     if (weapon.id === 'ak47') cd = 10;
                     else if (weapon.id === 'pistol') cd = 16;
@@ -231,7 +309,6 @@ io.on('connection', (socket) => {
                         
                         let aimAngle = data.aimAngle || (data.facing === 1 ? 0 : Math.PI);
                         if (weapon.id === 'shotgun') {
-                            // Shotgun bắn chùm 5 viên đạn với góc xòe
                             for (let i = -2; i <= 2; i++) {
                                 let spreadAngle = aimAngle + (i * 0.08);
                                 roomBullets[roomId].push({
@@ -271,12 +348,13 @@ io.on('connection', (socket) => {
                             attackerId: socket.id
                         });
 
+                        p.weapon = null;
                         socket.emit('weaponUsedUp');
                     }
                 }
             }
 
-            // Gửi dữ liệu đồng bộ góc nhìn, hành động sang cho các đối thủ khác trong phòng vẽ lại đồ họa
+            // Gửi dữ liệu đồng bộ góc nhìn, hành động sang cho các đối thủ khác trong phòng
             socket.to(roomId).emit('opponentAction', {
                 id: socket.id,
                 x: data.x,
@@ -286,21 +364,28 @@ io.on('connection', (socket) => {
                 facing: data.facing,
                 isAttacking: data.isAttacking,
                 hp: p.hp,
-                weapon: data.weapon 
+                weapon: p.weapon || data.weapon 
             });
         }
     });
 
     // XỬ LÝ KHI NGƯỜI CHƠI NHẶT VŨ KHÍ RƠI TRÊN SÀN ĐẤU
     socket.on('pickupWeapon', (data) => {
-        const { roomId, weaponId } = data;
+        const { roomId, weaponId } = data || {};
         if (roomId && roomWeapons[roomId] && roomWeapons[roomId][weaponId]) {
             const pickedWeapon = roomWeapons[roomId][weaponId].info;
             
-            // Xóa vũ khí khỏi trạng thái sàn đấu phòng này trên server
+            // Xóa vũ khí khỏi sàn đấu
             delete roomWeapons[roomId][weaponId];
             
-            // Báo cho cả phòng biết để xóa vũ khí dưới đất và đồng bộ gắn vào tay người nhặt
+            // Lưu vũ khí vào trạng thái player trên Server để không bị reset khi sync
+            if (roomPlayers[roomId] && roomPlayers[roomId][socket.id]) {
+                roomPlayers[roomId][socket.id].weapon = pickedWeapon;
+            }
+
+            console.log(`🎒 [Server Log] Người chơi ${socket.id} nhặt được vũ khí: ${pickedWeapon ? pickedWeapon.name : 'Unknown'} (Phòng: ${roomId})`);
+            
+            // Báo cho cả phòng biết
             io.to(roomId).emit('weaponPickedUp', {
                 weaponId: weaponId,
                 playerId: socket.id,
@@ -309,25 +394,37 @@ io.on('connection', (socket) => {
         }
     });
 
-    // MẤT KẾT NỐI (TẮT TRÌNH DUYỆT HOẶC MẤT MẠNG ĐỘT NGỘT)
-    socket.on('disconnect', () => {
-        console.log(`❌ Người chơi ngắt kết nối: ${socket.id}`);
+    // MẤT KẾT NỐI (VỚI GRACE PERIOD 15 GIÂY)
+    socket.on('disconnect', (reason) => {
+        console.warn(`❌ [Server Log] Người chơi ngắt kết nối: ${socket.id} (Lý do: ${reason || 'N/A'}) - Thời điểm: ${new Date().toLocaleTimeString()}`);
         removeFromQueue(socket);
-        if (socket.currentRoom) {
-            socket.to(socket.currentRoom).emit('playerLeft', { id: socket.id });
-            
-            if (roomPlayers[socket.currentRoom]) {
-                delete roomPlayers[socket.currentRoom][socket.id];
-                checkMatchOver(socket.currentRoom);
 
-                // Dọn dẹp bộ nhớ phòng trống
-                if (Object.keys(roomPlayers[socket.currentRoom]).length === 0) {
-                    delete roomPlayers[socket.currentRoom];
-                    delete roomWeapons[socket.currentRoom];
-                    delete roomBullets[socket.currentRoom];
-                    delete roomGrenades[socket.currentRoom];
+        const roomId = socket.currentRoom;
+        if (roomId && roomPlayers[roomId] && roomPlayers[roomId][socket.id]) {
+            console.log(`⏳ [Server Log] Giữ nguyên phòng ${roomId} cho ${socket.id} trong 15s cho phép reconnect...`);
+            
+            // Đánh dấu tạm ngắt kết nối
+            roomPlayers[roomId][socket.id].disconnected = true;
+
+            // Đặt timer 15 giây grace period trước khi thực sự dọn dẹp
+            disconnectTimers[socket.id] = setTimeout(() => {
+                console.log(`⏰ [Server Log] Hết 15s Grace Period cho ${socket.id} trong phòng ${roomId}. Thực hiện dọn dẹp...`);
+                delete disconnectTimers[socket.id];
+                
+                if (roomPlayers[roomId] && roomPlayers[roomId][socket.id]) {
+                    delete roomPlayers[roomId][socket.id];
+                    socket.to(roomId).emit('playerLeft', { id: socket.id });
+                    checkMatchOver(roomId);
+
+                    if (Object.keys(roomPlayers[roomId]).length === 0) {
+                        delete roomPlayers[roomId];
+                        delete roomWeapons[roomId];
+                        delete roomBullets[roomId];
+                        delete roomGrenades[roomId];
+                        console.log(`🧹 [Server Log] Phòng ${roomId} đã dọn dẹp hoàn toàn.`);
+                    }
                 }
-            }
+            }, 15000);
         }
     });
 });
