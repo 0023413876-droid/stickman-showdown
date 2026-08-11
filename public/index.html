@@ -12,6 +12,11 @@
             box-sizing: border-box;
             user-select: none;
         }
+        input, button, select {
+            user-select: text !important;
+            -webkit-user-select: text !important;
+            touch-action: manipulation !important;
+        }
         body {
             margin: 0;
             background-color: #222;
@@ -407,24 +412,28 @@
 <body>
     <h1>⚔️ STICKMAN SHOWDOWN</h1>
 
-    <!-- Màn hình nhập tên -->
+    <!-- Màn hình nhập tên & Chọn chế độ -->
     <div id="nameScreen">
         <div class="ns-card">
             <div class="ns-logo">⚔️</div>
             <h2>STICKMAN SHOWDOWN</h2>
-            <p class="ns-sub">Nhập tên nhân vật trước khi bắt đầu</p>
+            <p class="ns-sub">Nhập tên nhân vật & bắt đầu chơi</p>
 
             <div class="ns-field">
                 <label>👤 Tên Người Chơi 1 (Xanh / Bạn)</label>
-                <input type="text" id="p1NameInput" placeholder="Nhập tên P1..." maxlength="14" autocomplete="off" value="Người chơi 1" onkeydown="if(event.key==='Enter') enterGame()">
+                <input type="text" id="p1NameInput" placeholder="Nhập tên P1..." maxlength="14" autocomplete="off" value="Người chơi 1" onkeydown="if(event.key==='Enter') enterGame('pvp')">
             </div>
 
             <div class="ns-field" id="p2NameField">
                 <label>👤 Tên Người Chơi 2 (Đỏ - Nếu chơi 2 người)</label>
-                <input type="text" id="p2NameInput" placeholder="Nhập tên P2..." maxlength="14" autocomplete="off" value="Người chơi 2" onkeydown="if(event.key==='Enter') enterGame()">
+                <input type="text" id="p2NameInput" placeholder="Nhập tên P2..." maxlength="14" autocomplete="off" value="Người chơi 2" onkeydown="if(event.key==='Enter') enterGame('pvp')">
             </div>
 
-            <button id="btnEnterGame" onclick="enterGame()">VÀO GAME ➤</button>
+            <button id="btnEnterGame" onclick="enterGame('pvp')" style="margin-bottom: 12px;">🎮 VÀO GAME (2 NGƯỜI CHƠI) ➤</button>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="enterGame('ai')" style="background: linear-gradient(135deg, #2ecc71, #27ae60); color: white; border: none; padding: 13px; border-radius: 10px; font-weight: bold; flex: 1; cursor: pointer;">🤖 ĐẤU BOT</button>
+                <button onclick="enterGame('online')" style="background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; border: none; padding: 13px; border-radius: 10px; font-weight: bold; flex: 1; cursor: pointer;">🌍 ONLINE</button>
+            </div>
         </div>
     </div>
 
@@ -1891,18 +1900,28 @@
         // ============================================================
         //  MENU FUNCTIONS
         // ============================================================
-        function enterGame() {
+        function enterGame(mode = 'pvp') {
             let p1Val = document.getElementById("p1NameInput") ? document.getElementById("p1NameInput").value.trim() : "";
-            if (!p1Val) p1Val = "Người chơi 1";
-            p1.name = p1Val;
+            p1.name = p1Val || "Người chơi 1";
+
+            let p2Val = document.getElementById("p2NameInput") ? document.getElementById("p2NameInput").value.trim() : "";
+            p2.name = p2Val || "Người chơi 2";
 
             let ns = document.getElementById("nameScreen");
             if (ns) ns.style.display = "none";
 
-            let menu = document.getElementById("menu");
-            if (menu) menu.style.display = "block";
-            document.getElementById("mainMenu").style.display = "flex";
-            if (document.getElementById("pvpNameMenu")) document.getElementById("pvpNameMenu").style.display = "none";
+            if (mode === 'ai') {
+                let menu = document.getElementById("menu");
+                if (menu) menu.style.display = "block";
+                showDifficultyMenu();
+            } else if (mode === 'online') {
+                let menu = document.getElementById("menu");
+                if (menu) menu.style.display = "block";
+                showOnlineMenu();
+            } else {
+                // Mặc định vào thẳng trận 2 người chơi mà không cần qua menu phụ
+                startGame('pvp');
+            }
         }
 
         function showNameScreen() {
